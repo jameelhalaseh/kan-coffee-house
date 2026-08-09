@@ -9,7 +9,7 @@ const db = require('../db');
 const { requireSession, requireAdmin, requireView } = require('../auth');
 const { fail, dbError } = require('../validate');
 const { FLOORS, ordersTable } = require('../floors');
-const { tradingDate } = require('../tz');
+const { dayRangeUtc } = require('../tz');
 
 const jsonb = (v) => (v === undefined || v === null ? null : JSON.stringify(v));
 
@@ -34,10 +34,14 @@ const ALL_ORDERS_UNION = FLOORS.map((f) => `select * from ${ordersTable(f)}`).jo
 // show that sale as never returned and offer to return it again. (The server's over-refund
 // guard would still refuse the money, but the screen would be lying.) So alongside the
 // day's own rows we always return any refund that references an invoice from that day.
+// $1/$2 are the half-open UTC bounds of the trading day (see server/tz.js). Expressed as a
+// plain range on created_at so idx_orders_main_created is used — wrapping the column in
+// AT TIME ZONE was correct but forced a seq scan of the whole sales table.
 const dayFilter = (t) => `
-  (${tradingDate('created_at')} = $1::date
+  ((created_at >= $1 and created_at < $2)
    or (status = 'refund' and buyer in (
-         select 'return of #' || invoice_no from ${t} where ${tradingDate('created_at')} = $1::date
+         select 'return of #' || invoice_no from ${t}
+          where created_at >= $1 and created_at < $2
        )))`;
 
 const isDateOnly = (s) => /^\d{4}-\d{2}-\d{2}$/.test(String(s || ''));
@@ -52,14 +56,15 @@ router.get('/', requireSession, requireView('history', 'dashboard', 'reports'), 
     const date = req.query.date;
     const byDate = date !== undefined && date !== '';
     if (byDate && !isDateOnly(date)) return fail(res, 'invalid_date', 400);
+    const window = byDate ? dayRangeUtc(date) : null;
 
     if (req.query.floor !== undefined) {
       const t = tableFor(req.query.floor);
       if (!t) return fail(res, 'invalid_floor', 400);
       const { rows } = byDate
         ? await db.query(
-            `select * from ${t} where ${dayFilter(t)} order by created_at desc limit $2`,
-            [date, limit]
+            `select * from ${t} where ${dayFilter(t)} order by created_at desc limit $3`,
+            [window.start, window.end, limit]
           )
         : await db.query(`select * from ${t} order by created_at desc limit $1`, [limit]);
       return res.json(rows);
@@ -72,8 +77,8 @@ router.get('/', requireSession, requireView('history', 'dashboard', 'reports'), 
         .map((f) => `select * from ${ordersTable(f)} where ${dayFilter(ordersTable(f))}`)
         .join(' union all ');
       const { rows } = await db.query(
-        `select * from ( ${union} ) o order by created_at desc limit $2`,
-        [date, limit]
+        `select * from ( ${union} ) o order by created_at desc limit $3`,
+        [window.start, window.end, limit]
       );
       return res.json(rows);
     }

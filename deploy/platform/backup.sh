@@ -19,8 +19,34 @@ STAMP="$(date +%Y%m%d-%H%M%S)"
 # Offsite push. Examples:
 #   OFFSITE_CMD='rclone copy {} b2:7uloul-pos-backups/'
 #   OFFSITE_CMD='aws s3 cp {} s3://7uloul-pos-backups/'
-# {} is replaced with the dump path. Empty = local only (NOT recommended).
+# {} is replaced with the dump path.
 OFFSITE_CMD="${OFFSITE_CMD:-}"
+
+# Running local-only used to be the DEFAULT and it was silent: cron reported success every
+# night while every copy sat on the same disk as the database it was protecting. One dead
+# VPS and every client's sales are gone, with fourteen days of green log lines behind it.
+# Local-only is still allowed — but it now has to be asked for, in writing, per run.
+if [ -z "$OFFSITE_CMD" ] && [ "${ALLOW_LOCAL_ONLY:-0}" != "1" ]; then
+  cat >&2 <<'MSG'
+[backup] REFUSING TO RUN: no OFFSITE_CMD set.
+
+  A backup on the same disk as the database is not a backup. Set OFFSITE_CMD in
+  /srv/platform/.env (or the cron environment) to ship each dump off the box:
+
+    OFFSITE_CMD='rclone copy {} b2:7uloul-pos-backups/'
+    OFFSITE_CMD='aws s3 cp {} s3://7uloul-pos-backups/'
+
+  If you genuinely want local-only dumps (a throwaway staging box, never production),
+  say so explicitly:
+
+    ALLOW_LOCAL_ONLY=1 /srv/platform/backup.sh
+MSG
+  exit 2
+fi
+
+if [ -z "$OFFSITE_CMD" ]; then
+  echo "[backup] WARNING: local-only dumps (ALLOW_LOCAL_ONLY=1). These do NOT survive losing this box."
+fi
 
 mkdir -p "$BACKUP_DIR"
 cd "$PLATFORM_DIR"

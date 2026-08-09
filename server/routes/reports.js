@@ -5,7 +5,7 @@
 const router = require('express').Router();
 const db = require('../db');
 const { requireSession, requireView } = require('../auth');
-const { tradingDate, todayInStore } = require('../tz');
+const { tradingDate, todayInStore, dayRangeUtc } = require('../tz');
 
 // 'history' is deliberately NOT accepted here. The history view shows a cashier their own
 // shift's receipts (that is GET /api/orders); these endpoints are aggregated revenue,
@@ -27,8 +27,11 @@ const gate = [requireSession, requireView('reports', 'dashboard')];
 function range(req) {
   const clauses = ['voided_at is null'];
   const params = [];
-  if (req.query.from) { params.push(req.query.from); clauses.push(`${tradingDate('created_at')} >= $${params.length}::date`); }
-  if (req.query.to)   { params.push(req.query.to);   clauses.push(`${tradingDate('created_at')} <= $${params.length}::date`); }
+  // Bounds are resolved to UTC instants (server/tz.js) so these stay plain comparisons on
+  // created_at and keep using idx_orders_main_created. `to` is inclusive of that whole
+  // trading day: we take the START of the following day as an exclusive upper bound.
+  if (req.query.from) { params.push(dayRangeUtc(req.query.from).start); clauses.push(`created_at >= $${params.length}`); }
+  if (req.query.to)   { params.push(dayRangeUtc(req.query.to).end);     clauses.push(`created_at < $${params.length}`); }
   return { where: 'where ' + clauses.join(' and '), params };
 }
 
@@ -96,13 +99,14 @@ router.get('/reports/zreport', ...gate, async (req, res, next) => {
     // Default to the store's today, not UTC's — between midnight and 03:00 in Amman those
     // are different days, and the close-out must mean the shift the cashier just worked.
     const day = req.query.date || todayInStore();
+    const zWindow = dayRangeUtc(day);
     const { rows } = await db.query(
       `select coalesce(pay,'?') as pay, count(*)::int as orders, coalesce(sum(total),0) as total
          from orders_main
         where voided_at is null
-          and ${tradingDate('created_at')} = $1::date
+          and created_at >= $1 and created_at < $2
         group by pay order by pay`,
-      [day]
+      [zWindow.start, zWindow.end]
     );
     const net = rows.reduce((s, r) => s + Number(r.total), 0);
     res.json({ date: day, lines: rows, net });

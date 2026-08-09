@@ -1,0 +1,75 @@
+name: CI
+
+# The suite is worth nothing if it only runs when someone remembers. This runs both halves
+# on every push and PR: the jsdom tests (pure helpers, CSV parsing) and the server tests,
+# which need a real Postgres because what they assert is transactions, unique constraints
+# and row locks.
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine        # same major as production (deploy/platform)
+        env:
+          POSTGRES_USER: pos
+          POSTGRES_PASSWORD: pos
+          POSTGRES_DB: liquorpos
+        ports:
+          - 5433:5432
+        # Don't start the suite against a database still booting.
+        options: >-
+          --health-cmd "pg_isready -U pos"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      # globalSetup creates and migrates liquorpos_test on this server per run.
+      TEST_DATABASE_URL: postgres://pos:pos@localhost:5433/liquorpos_test
+      DATABASE_SSL: 'false'
+      # Must match src/client.config.js store.timezone, or the trading-day tests
+      # (the UTC+3 midnight boundary) assert against a different clock than the code uses.
+      STORE_TZ: Asia/Amman
+      CI: 'true'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      # `npm ci` needs the lockfile to match package.json — that check is itself useful.
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Frontend tests
+        run: npx react-scripts test --watchAll=false
+
+      - name: Server tests
+        run: npm run test:server
+
+      # A green suite against a build that doesn't compile is a false pass. INLINE_RUNTIME_CHUNK
+      # stays false here for the same reason production sets it: the CSP forbids inline scripts.
+      - name: Production build
+        run: npm run build
+
+      # The repo has been scanned clean; this keeps it that way rather than trusting review.
+      - name: Check for committed secrets
+        run: |
+          if git ls-files | grep -E '(^|/)\.env$'; then
+            echo "::error::A .env file is tracked by git"
+            exit 1
+          fi
+          if git grep -nIE '(sk-[A-Za-z0-9]{20,}|nvapi-[A-Za-z0-9_-]{20,}|AKIA[0-9A-Z]{16}|-----BEGIN [A-Z ]*PRIVATE KEY)' -- . ':!*.yml'; then
+            echo "::error::Possible secret committed"
+            exit 1
+          fi
+          echo "No secrets found."

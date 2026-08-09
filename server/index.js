@@ -10,6 +10,7 @@ const helmet = require('helmet');
 const compression = require('compression');
 const cors = require('cors');
 const rateLimit = require('express-rate-limit');
+const { log, alert, requestLogger } = require('./logger');
 
 const app = express();
 app.set('trust proxy', 1); // Heroku terminates TLS at the router; needed for rate-limit IPs
@@ -57,6 +58,7 @@ app.use(cors({
 }));
 
 app.use(express.json({ limit: '2mb' }));           // orders carry an items[] array
+app.use(requestLogger);
 
 // ── Rate limiting ─────────────────────────────────────────────────────────────
 // Keyed on the CLIENT IP.
@@ -136,10 +138,35 @@ if (fs.existsSync(buildIndex)) {
 // JSON 404 for unmatched /api routes.
 app.use('/api', (_req, res) => res.status(404).json({ error: 'not_found' }));
 
-// Centralised error handler — never leak internals.
-app.use((err, _req, res, _next) => {
-  console.error('[api] error:', err && err.stack ? err.stack : err);
+// Centralised error handler — never leak internals to the client, never lose them here.
+// The response stays a bare { error: 'server' }; the stack goes to the log and, if a
+// webhook is configured, to whoever is on call.
+app.use((err, req, res, _next) => {
+  const fields = {
+    req: req.id,
+    route: req.originalUrl ? req.originalUrl.split('?')[0] : null,
+    method: req.method,
+    user: (req.user && req.user.username) || null,
+    error: (err && err.message) || String(err),
+    code: err && err.code,
+    stack: err && err.stack ? String(err.stack).split('\n').slice(0, 8).join(' | ') : null,
+  };
+  log.error('unhandled error', fields);
+  alert('unhandled API error', { route: fields.route, error: fields.error, req: fields.req });
   res.status(500).json({ error: 'server' });
+});
+
+// A rejected promise with no catch, or a thrown error outside a request, would otherwise
+// kill the container silently and let Docker restart it with nobody the wiser.
+process.on('unhandledRejection', (reason) => {
+  log.error('unhandled rejection', { error: (reason && reason.message) || String(reason) });
+  alert('unhandled promise rejection', { error: (reason && reason.message) || String(reason) });
+});
+process.on('uncaughtException', (e) => {
+  log.error('uncaught exception', { error: e.message, stack: String(e.stack).split('\n').slice(0, 8).join(' | ') });
+  alert('uncaught exception — process is exiting', { error: e.message });
+  // Let it die: the state is unknown. Docker's restart policy brings back a clean process.
+  setTimeout(() => process.exit(1), 250);
 });
 
 // Bind a port only when this file is the entrypoint (`npm run server`). Required by
@@ -147,7 +174,7 @@ app.use((err, _req, res, _next) => {
 // guard every test run would race the dev server for :3001.
 if (require.main === module) {
   const PORT = process.env.PORT || 3001;
-  app.listen(PORT, () => console.log(`CashierPOS API listening on :${PORT}`));
+  app.listen(PORT, () => log.info('api listening', { port: PORT, tz: process.env.STORE_TZ || 'Asia/Amman' }));
 }
 
 module.exports = app;
