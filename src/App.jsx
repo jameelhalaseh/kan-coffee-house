@@ -6,10 +6,11 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import api from './api';
 import {
-  STORE_NAME, CURRENCY, ARABIC, DEFAULT_FLOOR, BILL, SELLER, VIEWS, VIEW_LABELS, toggleLang,
+  STORE_NAME, CURRENCY, ARABIC, DEFAULT_FLOOR, BILL, SELLER, VIEWS, VIEW_LABELS, toggleLang, TAX_RATE,
 } from './client.config';
 import {
-  money, uid, nowParts, cashSuggestions, catColor, escapeHtml, remainingQty, returnedMapFor,
+  money, r3, splitInclusiveTax, uid, nowParts, todayInStore, storeTimeOf, storeDateOf,
+  cashSuggestions, catColor, escapeHtml, remainingQty, returnedMapFor,
 } from './lib';
 import { parseProductCsv, importTemplateCsv, MAX_IMPORT_ROWS } from './csv';
 import AssistantView from './AssistantView';
@@ -41,7 +42,12 @@ function printReceipt(sale) {
     <table><thead><tr><th>Item</th><th style="text-align:center">Qty</th>
       <th style="text-align:right">Price</th><th style="text-align:right">Total</th></tr></thead>
       <tbody>${lines}</tbody>
-      <tfoot><tr class="tot"><td colspan="3">TOTAL</td>
+      <tfoot>${Number(sale.tax) > 0 ? `
+        <tr><td colspan="3">Subtotal</td>
+          <td style="text-align:right">${(Number(sale.sub) || 0).toFixed(3)}</td></tr>
+        <tr><td colspan="3">VAT ${Math.round(TAX_RATE * 100)}% (included)</td>
+          <td style="text-align:right">${(Number(sale.tax) || 0).toFixed(3)}</td></tr>` : ''}
+        <tr class="tot"><td colspan="3">TOTAL</td>
         <td style="text-align:right">${(Number(sale.total) || 0).toFixed(3)}</td></tr>
         <tr><td colspan="4" style="font-size:11px;padding-top:4px">Paid: ${escapeHtml(sale.pay || '')}</td></tr>
       </tfoot></table>
@@ -163,13 +169,20 @@ export default function App() {
             ⚠ {ARABIC ? 'لا يوجد اتصال — سيتم حفظ المبيعات محلياً ومزامنتها عند عودة الاتصال' : 'Offline — sales are saved locally and sync when the connection returns'}
           </div>
         )}
-        {view === 'sales' && <SalesView user={user} notify={notify} />}
-        {view === 'inventory' && allowed('inventory') && <InventoryView isAdmin={isAdmin} notify={notify} />}
-        {view === 'receive' && allowed('receive') && <ReceiveView isAdmin={isAdmin} notify={notify} />}
-        {view === 'history' && allowed('history') && <HistoryView user={user} notify={notify} />}
-        {view === 'reports' && allowed('reports') && <ReportsView notify={notify} />}
-        {view === 'assistant' && allowed('assistant') && <AssistantView notify={notify} />}
-        {view === 'settings' && <SettingsView user={user} isAdmin={isAdmin} notify={notify} />}
+        {/* Sales earns the full width — more product tiles visible means fewer taps. Every
+            other view is a table or a few stat cards, and stretched across a 1500px counter
+            monitor those read as an unfinished page rather than a spacious one: the eye has
+            to travel the whole width to pair a row with its buttons. Capping the measure and
+            centring it keeps related things near each other. */}
+        <div style={{ maxWidth: view === 'sales' ? 'none' : 1180, marginInline: view === 'sales' ? 0 : 'auto' }}>
+          {view === 'sales' && <SalesView user={user} notify={notify} />}
+          {view === 'inventory' && allowed('inventory') && <InventoryView isAdmin={isAdmin} notify={notify} />}
+          {view === 'receive' && allowed('receive') && <ReceiveView isAdmin={isAdmin} notify={notify} />}
+          {view === 'history' && allowed('history') && <HistoryView user={user} notify={notify} />}
+          {view === 'reports' && allowed('reports') && <ReportsView notify={notify} />}
+          {view === 'assistant' && allowed('assistant') && <AssistantView notify={notify} />}
+          {view === 'settings' && <SettingsView user={user} isAdmin={isAdmin} notify={notify} />}
+        </div>
       </main>
       <Sidebar user={user} view={view} setView={setView} navViews={navViews} onLogout={handleLogout} canSeeStock={allowed('inventory') || allowed('reports')} onChangePassword={() => setPwOpen(true)} />
       {pwOpen && <ChangePasswordModal notify={notify} onClose={() => setPwOpen(false)} />}
@@ -223,7 +236,7 @@ function CustomerDisplay() {
   );
 }
 
-const VIEW_ICONS = { sales: '🛒', inventory: '📦', receive: '📥', history: '🧾', reports: '📊', settings: '⚙️' };
+const VIEW_ICONS = { sales: '🛒', inventory: '📦', receive: '📥', history: '🧾', reports: '📊', assistant: '🤖', settings: '⚙️' };
 
 // Clock In/Out for the logged-in employee.
 function ClockButton() {
@@ -256,8 +269,15 @@ function NotificationsBell() {
   const count = low.length + exp.length;
   return (
     <div style={{ position: 'relative' }}>
-      <button onClick={() => setOpen((o) => !o)} style={{ ...S.btnGhost, height: 64, fontSize: 20, position: 'relative' }}>
-        🔔{count > 0 && <span style={{ position: 'absolute', top: 6, insetInlineEnd: 6, background: C.red, color: '#fff', borderRadius: 10, fontSize: 11, fontWeight: 800, padding: '1px 6px' }}>{count}</span>}
+      <button onClick={() => setOpen((o) => !o)}
+        title={ARABIC ? 'تنبيهات المخزون' : 'Stock alerts'}
+        style={{ ...S.btnGhost, height: 56, fontSize: 15, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                 ...(count > 0 ? { borderColor: C.red, color: C.red } : {}) }}>
+        <span style={{ fontSize: 18 }}>🔔</span>
+        <span>{ARABIC ? 'تنبيهات' : 'Alerts'}</span>
+        {count > 0 && (
+          <span style={{ background: C.red, color: '#fff', borderRadius: 10, fontSize: 12, fontWeight: 800, padding: '1px 7px' }}>{count}</span>
+        )}
       </button>
       {open && <div onClick={() => setOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 999 }} />}
       {open && (
@@ -604,8 +624,12 @@ const catTitle = (cat) => (cat === ALL_CAT ? (ARABIC ? 'كل الأصناف' : '
 function SalesView({ user, notify }) {
   const [products, setProducts] = useState([]);
   const [cart, setCart] = useState([]);          // [{id,barcode,name,price,qty}]
+  // ONE query box, not two. There used to be a scan field and a separate search field
+  // stacked on top of each other doing overlapping jobs, and the scanner's target was the
+  // one that didn't say "search" — new staff picked wrong daily. Now: typing filters the
+  // tiles live, Enter treats what you typed as a barcode. A scanner bursts characters and
+  // sends Enter, so it lands on the barcode path without anyone aiming at anything.
   const [scan, setScan] = useState('');
-  const [search, setSearch] = useState('');
   // null = browsing the category grid; 'all' or a category name = viewing that shelf's items.
   const [cat, setCat] = useState(null);
   const [pay, setPay] = useState('cash');
@@ -705,6 +729,13 @@ function SalesView({ user, notify }) {
   const addCustom = ({ name, price, qty }) => setCart((prev) => [...prev, { id: 'misc-' + uid(), barcode: null, name, price: Number(price) || 0, qty: Number(qty) || 1, custom: true }]);
 
   const total = cart.reduce((s, l) => s + l.price * l.qty, 0);
+  // Shelf prices in Jordan are VAT-INCLUSIVE, so the tax is extracted from the total rather
+  // than added on top — the customer pays exactly the marked price. Checkout used to send
+  // `tax: 0, sub: total` and never imported TAX_RATE at all, so every sale was recorded as
+  // carrying no VAT: wrong on the receipt, wrong in the Z-report, and wrong on anything
+  // filed with the ISTD. (If this client's prices are ever quoted NET of VAT, this is the
+  // one place to change — and every shelf price rises by the rate.)
+  const { net: netAmount, tax: taxAmount } = splitInclusiveTax(total, TAX_RATE);
   const change = pay === 'cash' && tendered ? (Number(tendered) - total) : null;
 
   // Push the live cart to the customer-facing display (2nd screen).
@@ -769,7 +800,7 @@ function SalesView({ user, notify }) {
     if (!cart.length || busy) return;
     setBusy(true);
     const { date, time } = nowParts();
-    const sale = { id: uid(), floor: DEFAULT_FLOOR, items: cart, sub: total, tax: 0, svc: 0, disc: 0, total, pay, waiter: user.username, status: 'paid', date, time };
+    const sale = { id: uid(), floor: DEFAULT_FLOOR, items: cart, sub: r3(netAmount), tax: r3(taxAmount), svc: 0, disc: 0, total, pay, waiter: user.username, status: 'paid', date, time };
     // Sale is committed at this point — the popup only decides whether to print.
     const finish = (s) => { setReceipt({ ...s, change }); setCart([]); setTendered(''); setPay('cash'); };
     try {
@@ -802,7 +833,7 @@ function SalesView({ user, notify }) {
   // Browse model: pick a category first, then its items. Searching cuts across every
   // category (you shouldn't have to guess the shelf to find a bottle), and a barcode scan
   // never touches this — it resolves straight to the product.
-  const q = search.trim();
+  const q = scan.trim();
   const searching = q.length > 0;
   const catCards = categoryCards(products);
   const browsing = !searching && cat === null;
@@ -820,10 +851,24 @@ function SalesView({ user, notify }) {
       {/* Left: scan + tap-to-add product tiles */}
       <div dir={ARABIC ? 'rtl' : 'ltr'} style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 12 }}>
         <div style={{ display: 'flex', gap: 10 }}>
-          <input ref={scanRef} style={{ ...S.input, fontSize: 18, padding: '14px', letterSpacing: 1 }}
-            value={scan} onChange={(e) => setScan(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') onScan(scan); }}
-            placeholder={ARABIC ? '🔍 امسح الباركود أو اضغط منتجاً' : '🔍 Scan barcode or tap a product'} inputMode="search" />
+          <div style={{ position: 'relative', flex: 1, minWidth: 0 }}>
+            <input ref={scanRef} style={{ ...S.input, width: '100%', fontSize: 18, padding: '14px', paddingInlineEnd: scan ? 44 : 14, letterSpacing: 1 }}
+              value={scan} onChange={(e) => setScan(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') onScan(scan);
+                if (e.key === 'Escape') setScan('');
+              }}
+              placeholder={ARABIC ? '🔍 امسح الباركود أو ابحث بالاسم' : '🔍 Scan barcode or search by name'} inputMode="search" />
+            {/* Clearing by hand is otherwise a long press on Backspace mid-queue. */}
+            {scan && (
+              <button onClick={() => { setScan(''); refocus(); }} aria-label={ARABIC ? 'مسح' : 'Clear'}
+                style={{
+                  position: 'absolute', insetInlineEnd: 6, top: '50%', transform: 'translateY(-50%)',
+                  width: 32, height: 32, borderRadius: 8, border: 'none', background: 'transparent',
+                  color: C.dim, fontSize: 18, cursor: 'pointer', fontFamily: 'inherit',
+                }}>✕</button>
+            )}
+          </div>
           <button onClick={() => setQuickItem(true)} style={{ ...S.btnGhost, whiteSpace: 'nowrap', fontSize: 15, fontWeight: 700 }}>
             ＋ {ARABIC ? 'صنف يدوي' : 'Quick item'}
           </button>
@@ -841,8 +886,6 @@ function SalesView({ user, notify }) {
           )}
         </div>
 
-        <input style={S.input} value={search} onChange={(e) => setSearch(e.target.value)} placeholder={ARABIC ? 'ابحث بالاسم أو الباركود…' : 'Search by name or barcode…'} />
-
         {/* Breadcrumb — only once you're inside a category (or searching across all of them). */}
         {!browsing && (
           <CategoryHeader
@@ -857,7 +900,7 @@ function SalesView({ user, notify }) {
             emptyHint={ARABIC ? 'لا منتجات — أضفها من المخزون' : 'No products — add them in Inventory'} />
         ) : (
         /* Step 2 — the items on that shelf (or the search hits across all of them). */
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 10, alignContent: 'start' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(185px, 1fr))', gap: 12, alignContent: 'start' }}>
           {tiles.map((p) => (
             <button key={p.id} onClick={() => addProduct(p)} className="rise" style={{
               display: 'flex', flexDirection: 'column', justifyContent: 'space-between', gap: 6, height: 112, padding: '10px 12px 12px',
@@ -870,9 +913,20 @@ function SalesView({ user, notify }) {
               </span>
               <span style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6 }}>
                 <span style={{ color: C.accent, fontWeight: 800, fontSize: 16 }}>{money(p.price)}{p.unit === 'kg' ? (ARABIC ? '/كغ' : '/kg') : ''}</span>
-                {Number(p.stock) <= 5
-                  ? <span style={{ fontSize: 11, color: '#fff', background: C.red, fontWeight: 800, borderRadius: 8, padding: '2px 7px' }}>{Number(p.stock)}</span>
-                  : <span style={{ fontSize: 11, color: C.dim }}>{p.cat || ''}</span>}
+                {/* A bare red pill reading "2" on a product tile reads as "2 in the cart",
+                    which is the opposite of what it means. Say the word: it costs a few
+                    pixels and removes the guess. Out of stock is worth its own wording —
+                    the cashier should stop reaching for the shelf, not just hurry. */}
+                {Number(p.stock) <= 0
+                  ? <span style={{ fontSize: 11, color: '#fff', background: C.red, fontWeight: 800, borderRadius: 8, padding: '2px 7px', whiteSpace: 'nowrap' }}>
+                      {ARABIC ? 'نفد' : 'Out'}
+                    </span>
+                  : Number(p.stock) <= 5
+                    ? <span title={ARABIC ? 'كمية منخفضة' : 'Low stock'}
+                        style={{ fontSize: 11, color: C.red, border: `1px solid ${C.red}`, fontWeight: 800, borderRadius: 8, padding: '2px 7px', whiteSpace: 'nowrap' }}>
+                        {ARABIC ? `${Number(p.stock)} متبقٍ` : `${Number(p.stock)} left`}
+                      </span>
+                    : <span style={{ fontSize: 11, color: C.dim }}>{p.cat || ''}</span>}
               </span>
             </button>
           ))}
@@ -923,8 +977,23 @@ function SalesView({ user, notify }) {
             </div>
           ))}
         </div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 26, fontWeight: 800, margin: '14px 0', background: C.panel2, border: `1px solid ${C.line}`, borderRadius: 12, padding: '12px 16px' }}>
-          <span style={{ fontSize: 17, color: C.dim }}>{ARABIC ? 'المجموع' : 'Total'}</span><span style={{ color: C.accent }}>{money(total)}</span>
+        <div style={{ margin: '14px 0', background: C.panel2, border: `1px solid ${C.line}`, borderRadius: 12, padding: '12px 16px' }}>
+          {/* "How much is the tax?" is a question cashiers get asked at the counter. It used
+              to be unanswerable without printing the receipt first. */}
+          {TAX_RATE > 0 && total > 0 && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 10, fontSize: 14, color: C.dim }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span>{ARABIC ? 'المجموع الفرعي' : 'Subtotal'}</span><span>{money(netAmount)}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span>{ARABIC ? `ضريبة ${Math.round(TAX_RATE * 100)}% (مشمولة)` : `VAT ${Math.round(TAX_RATE * 100)}% (incl.)`}</span>
+                <span>{money(taxAmount)}</span>
+              </div>
+            </div>
+          )}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 26, fontWeight: 800 }}>
+            <span style={{ fontSize: 17, color: C.dim }}>{ARABIC ? 'المجموع' : 'Total'}</span><span style={{ color: C.accent }}>{money(total)}</span>
+          </div>
         </div>
         <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
           {['cash', 'card'].map((m) => (
@@ -1485,8 +1554,8 @@ function InventoryView({ isAdmin, notify }) {
                 <td style={{ ...td, textAlign: 'right' }}>{money(p.price)}</td>
                 <td style={{ ...td, textAlign: 'right', color: Number(p.stock) <= 5 ? C.red : C.text }}>{Number(p.stock)}</td>
                 <td style={{ ...td, textAlign: 'end', whiteSpace: 'nowrap' }}>
-                  <button onClick={() => setEditing(p)} style={{ ...S.btnGhost, padding: '5px 10px' }}>{ARABIC ? 'تعديل' : 'Edit'}</button>
-                  {isAdmin && <button onClick={() => remove(p)} style={{ ...S.btnGhost, padding: '5px 10px', color: C.red, marginInlineStart: 6 }}>{ARABIC ? 'حذف' : 'Del'}</button>}
+                  <button onClick={() => setEditing(p)} style={S.btnRow}>{ARABIC ? 'تعديل' : 'Edit'}</button>
+                  {isAdmin && <button onClick={() => remove(p)} style={{ ...S.btnRow, color: C.red, marginInlineStart: 8 }}>{ARABIC ? 'حذف' : 'Del'}</button>}
                 </td>
               </tr>
             ))}
@@ -1604,20 +1673,44 @@ function ReceiveView({ isAdmin, notify }) {
 // ══════════════════════════════════════════════════════════════════════════════
 // History
 // ══════════════════════════════════════════════════════════════════════════════
+// "2026-08-08" → "Sat 8 Aug 2026" / "السبت ٨ أغسطس ٢٠٢٦". Day-name first: when someone is
+// hunting a receipt they remember the day of the week, not the date.
+function formatDayLabel(iso) {
+  const d = new Date(iso + 'T12:00:00Z');          // midday, so no timezone can shift the day
+  if (Number.isNaN(d.getTime())) return iso;
+  return new Intl.DateTimeFormat(ARABIC ? 'ar-JO' : 'en-GB', {
+    weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC',
+  }).format(d);
+}
+
 function HistoryView({ user, notify }) {
   const [sales, setSales] = useState([]);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState(null);
   const [returning, setReturning] = useState(null); // sale being returned
   const [fotaraOn, setFotaraOn] = useState(false);  // JoFotara wired up on this deployment?
+  // History is one trading day at a time, opening on today: the receipt a cashier needs is
+  // almost always from the last few minutes, and a shop open for a year should not have to
+  // scroll a year to reach it. Older days are one tap back.
+  const [day, setDay] = useState(todayInStore);
 
   const load = useCallback(() => {
     setLoading(true);
-    api.get('/orders?floor=' + DEFAULT_FLOOR + '&limit=200')
+    api.get('/orders?floor=' + DEFAULT_FLOOR + '&date=' + day + '&limit=500')
       .then(setSales).catch(() => notify(ARABIC ? 'تعذّر تحميل السجل' : 'Failed to load history', 'red'))
       .finally(() => setLoading(false));
-  }, [notify]);
+  }, [notify, day]);
   useEffect(() => { load(); }, [load]);
+
+  // Step the selected day. Built from the YYYY-MM-DD string in UTC so it can't drift a day
+  // either side of midnight the way a local-timezone Date would.
+  const shiftDay = (delta) => {
+    const d = new Date(day + 'T00:00:00Z');
+    d.setUTCDate(d.getUTCDate() + delta);
+    setDay(d.toISOString().slice(0, 10));
+  };
+  const today = todayInStore();
+  const isToday = day === today;
   // Credentials live server-side; we only ask whether they exist so the button can be
   // hidden entirely on deployments that aren't registered with the ISTD.
   useEffect(() => { api.get('/jofotara/status').then((r) => setFotaraOn(!!(r && r.configured))).catch(() => {}); }, []);
@@ -1670,12 +1763,59 @@ function HistoryView({ user, notify }) {
     return (sale.items || []).every((l) => remainingQty(l, map) === 0);
   };
 
-  if (loading) return <div style={{ color: C.dim }}>{ARABIC ? 'جارٍ التحميل…' : 'Loading…'}</div>;
+  // The list can also contain a refund from ANOTHER day that reverses one of this day's
+  // sales (the server returns those so the Return button clamps correctly). Those must not
+  // move this day's takings — a refund belongs to the day it was issued, same rule the
+  // Z-report follows — so the total counts only rows actually dated to the selected day.
+  const ownRows = sales.filter((s) => storeDateOf(s.created_at, s.date) === day);
+  const dayTotal = ownRows.reduce((sum, s) => sum + (Number(s.total) || 0), 0);
+
+  const dayPicker = (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
+      <button onClick={() => shiftDay(-1)} style={{ ...S.btnGhost, padding: '9px 14px' }}
+        title={ARABIC ? 'اليوم السابق' : 'Previous day'}>‹</button>
+      {/* The native picker renders the browser's locale — on this machine 08/09/2026, which
+          in Jordan reads as 8 September. So the readable label is ours ("Sat 8 Aug 2026")
+          and the native control sits on top of it, invisible but still doing the picking:
+          full keyboard and calendar behaviour, no ambiguity about which number is the day. */}
+      <label style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
+        <span style={{ ...S.input, width: 'auto', minWidth: 190, minHeight: 44, display: 'inline-flex', alignItems: 'center', gap: 8, fontWeight: 700, cursor: 'pointer' }}>
+          🗓 {formatDayLabel(day)}
+        </span>
+        <input type="date" value={day} max={today} onChange={(e) => e.target.value && setDay(e.target.value)}
+          style={{ position: 'absolute', inset: 0, opacity: 0, width: '100%', height: '100%', cursor: 'pointer' }} />
+      </label>
+      {/* Never offer a day that hasn't happened — there is nothing to show there. */}
+      <button onClick={() => shiftDay(1)} disabled={isToday}
+        style={{ ...S.btnGhost, padding: '9px 14px', opacity: isToday ? 0.4 : 1, cursor: isToday ? 'default' : 'pointer' }}
+        title={ARABIC ? 'اليوم التالي' : 'Next day'}>›</button>
+      {!isToday && (
+        <button onClick={() => setDay(today)} style={{ ...S.btnGhost, padding: '9px 14px', color: C.accent, borderColor: C.accent }}>
+          {ARABIC ? 'اليوم' : 'Today'}
+        </button>
+      )}
+      <div style={{ marginInlineStart: 'auto', display: 'flex', alignItems: 'baseline', gap: 10 }}>
+        <span style={{ color: C.dim, fontSize: 13 }}>
+          {ownRows.length} {ARABIC ? 'فاتورة' : ownRows.length === 1 ? 'sale' : 'sales'}
+        </span>
+        <span style={{ fontWeight: 800, fontSize: 17 }}>{money(dayTotal)}</span>
+      </div>
+    </div>
+  );
+
+  if (loading) return (
+    <div>
+      {dayPicker}
+      <div style={{ color: C.dim }}>{ARABIC ? 'جارٍ التحميل…' : 'Loading…'}</div>
+    </div>
+  );
   return (
+    <div>
+    {dayPicker}
     <div style={S.card}>
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
         <thead><tr style={{ color: C.dim, textAlign: ARABIC ? 'right' : 'left' }}>
-          <th style={th}>#</th><th style={th}>{ARABIC ? 'التاريخ' : 'Date'}</th><th style={th}>{ARABIC ? 'الأصناف' : 'Items'}</th>
+          <th style={th}>#</th><th style={th}>{ARABIC ? 'الوقت' : 'Time'}</th><th style={th}>{ARABIC ? 'الأصناف' : 'Items'}</th>
           <th style={th}>{ARABIC ? 'الدفع' : 'Pay'}</th><th style={{ ...th, textAlign: 'right' }}>{ARABIC ? 'المجموع' : 'Total'}</th><th style={th}></th>
         </tr></thead>
         <tbody>
@@ -1684,13 +1824,21 @@ function HistoryView({ user, notify }) {
             return (
               <tr key={s.id} style={{ borderTop: `1px solid ${C.line}`, opacity: isRefund ? 0.7 : 1 }}>
                 <td style={td}>{s.invoice_no}</td>
-                <td style={{ ...td, color: C.dim }}>{s.date} {s.time}</td>
+                {/* The day is already in the picker above — repeating it on every row is
+                    noise. A refund pulled in from another day DOES show its own date,
+                    because there the date is the surprising part. */}
+                <td style={{ ...td, color: C.dim, whiteSpace: 'nowrap' }}>
+                  {storeDateOf(s.created_at, s.date) !== day && (
+                    <span style={{ marginInlineEnd: 6 }}>{storeDateOf(s.created_at, s.date)}</span>
+                  )}
+                  {storeTimeOf(s.created_at, s.time)}
+                </td>
                 <td style={{ ...td, color: C.dim }}>{(s.items || []).reduce((n, l) => n + (l.qty || 0), 0)}</td>
                 <td style={td}>{isRefund ? (ARABIC ? '↩ استرجاع' : '↩ refund') : s.pay}</td>
                 <td style={{ ...td, textAlign: 'right', fontWeight: 700, color: isRefund ? C.red : C.text }}>{money(s.total)}</td>
                 <td style={{ ...td, textAlign: 'end', whiteSpace: 'nowrap' }}>
-                  <button onClick={() => printReceipt(s)} style={{ ...S.btnGhost, padding: '6px 12px' }}>{ARABIC ? 'طباعة' : 'Print'}</button>
-                  {!isRefund && !fullyReturned(s) && <button onClick={() => setReturning(s)} disabled={busyId === s.id} style={{ ...S.btnGhost, padding: '6px 12px', color: C.red, marginInlineStart: 6 }}>{busyId === s.id ? '…' : (ARABIC ? 'استرجاع' : 'Return')}</button>}
+                  <button onClick={() => printReceipt(s)} style={S.btnRow}>{ARABIC ? 'طباعة' : 'Print'}</button>
+                  {!isRefund && !fullyReturned(s) && <button onClick={() => setReturning(s)} disabled={busyId === s.id} style={{ ...S.btnRow, color: C.red, marginInlineStart: 8 }}>{busyId === s.id ? '…' : (ARABIC ? 'استرجاع' : 'Return')}</button>}
                   {!isRefund && fullyReturned(s) && <span style={{ color: C.dim, fontSize: 12, marginInlineStart: 6 }}>{ARABIC ? 'مسترجعة' : 'returned'}</span>}
                   {/* فوترة — file this sale with the ISTD. Hidden entirely when the
                       deployment has no credentials, so it can't be tapped in vain. */}
@@ -1699,7 +1847,7 @@ function HistoryView({ user, notify }) {
                     : <button onClick={() => sendFotara(s)} disabled={busyId === s.id}
                         title={s.jofotara_error || ''}
                         style={{
-                          ...S.btnGhost, padding: '6px 12px', marginInlineStart: 6, fontWeight: 700,
+                          ...S.btnRow, marginInlineStart: 8, fontWeight: 700,
                           color: s.jofotara_status === 'failed' ? C.red : C.blue,
                           borderColor: s.jofotara_status === 'failed' ? C.red : C.blue,
                         }}>
@@ -1709,10 +1857,19 @@ function HistoryView({ user, notify }) {
               </tr>
             );
           })}
-          {!sales.length && <tr><td colSpan={6} style={{ ...td, color: C.dim, textAlign: 'center', padding: 24 }}>{ARABIC ? 'لا مبيعات بعد' : 'No sales yet'}</td></tr>}
+          {/* An empty day is normal (a closed Friday, or first thing in the morning) — say
+              which day is empty rather than implying the shop has never sold anything. */}
+          {!sales.length && (
+            <tr><td colSpan={6} style={{ ...td, color: C.dim, textAlign: 'center', padding: 24 }}>
+              {isToday
+                ? (ARABIC ? 'لا مبيعات اليوم بعد' : 'No sales yet today')
+                : (ARABIC ? `لا مبيعات في ${day}` : `No sales on ${day}`)}
+            </td></tr>
+          )}
         </tbody>
       </table>
       {returning && <ReturnModal sale={returning} returned={returnedFor(returning)} busy={busyId === returning.id} onClose={() => setReturning(null)} onConfirm={(lines) => doReturn(returning, lines)} />}
+    </div>
     </div>
   );
 }

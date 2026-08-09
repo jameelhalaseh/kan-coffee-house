@@ -11,4 +11,15 @@ export const S = {
   btnGhost: { padding: '9px 14px', borderRadius: 9, border: `1px solid ${C.line}`, background: 'transparent', color: C.text, fontWeight: 600, fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' },
   input: { padding: '10px 12px', borderRadius: 8, border: `1px solid ${C.line}`, background: C.panel2, color: C.text, fontSize: 14, fontFamily: 'inherit', outline: 'none', width: '100%', boxSizing: 'border-box' },
   card: { background: C.panel, borderRadius: 12, border: `1px solid ${C.line}`, padding: 16 },
+
+  // Actions that live inside a table row (Print, Return, Edit, Del). These were 5–6px of
+  // vertical padding — roughly 26px tall — against the 44px minimum a fingertip needs. On a
+  // counter touchscreen with a customer waiting, that undersize is the main source of
+  // mis-taps, and a mis-tap on "Return" is a refund dialog you have to back out of.
+  btnRow: {
+    minHeight: 44, minWidth: 44, padding: '0 16px',
+    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+    borderRadius: 9, border: `1px solid ${C.line}`, background: 'transparent',
+    color: C.text, fontWeight: 600, fontSize: 14, cursor: 'pointer', fontFamily: 'inherit',
+  },
 };

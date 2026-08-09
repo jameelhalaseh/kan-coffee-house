@@ -9,6 +9,7 @@ const db = require('../db');
 const { requireSession, requireAdmin, requireView } = require('../auth');
 const { fail, dbError } = require('../validate');
 const { FLOORS, ordersTable } = require('../floors');
+const { tradingDate } = require('../tz');
 
 const jsonb = (v) => (v === undefined || v === null ? null : JSON.stringify(v));
 
@@ -22,18 +23,61 @@ const ALL_ORDERS_UNION = FLOORS.map((f) => `select * from ${ordersTable(f)}`).jo
 // GET /api/orders?limit=200 (no floor) → both stores merged (combined history/reports).
 // Revenue history — gated to views that display it (history/dashboard/reports). A limited
 // operator (e.g. "tables"-only) cannot read sales totals directly via the API. Admins bypass.
+// ?date=YYYY-MM-DD → just that trading day. The History screen sends today's date by
+// default, so a shop that has been open for a year doesn't scroll through a year of sales
+// to find the receipt from ten minutes ago.
+//
+// One wrinkle makes this more than a WHERE clause. The screen computes "how much of this
+// sale has already been returned" from the rows it is holding, and a refund is a SEPARATE
+// order carrying `buyer = 'return of #<invoice>'`. A refund processed today against
+// yesterday's sale therefore falls outside yesterday's window — so opening yesterday would
+// show that sale as never returned and offer to return it again. (The server's over-refund
+// guard would still refuse the money, but the screen would be lying.) So alongside the
+// day's own rows we always return any refund that references an invoice from that day.
+const dayFilter = (t) => `
+  (${tradingDate('created_at')} = $1::date
+   or (status = 'refund' and buyer in (
+         select 'return of #' || invoice_no from ${t} where ${tradingDate('created_at')} = $1::date
+       )))`;
+
+const isDateOnly = (s) => /^\d{4}-\d{2}-\d{2}$/.test(String(s || ''));
+
 router.get('/', requireSession, requireView('history', 'dashboard', 'reports'), async (req, res, next) => {
   try {
     let limit = parseInt(req.query.limit, 10);
     if (!Number.isFinite(limit) || limit <= 0) limit = 200;   // RPC default
     limit = Math.min(limit, 100000);                          // largest legit caller (receipts/reports)
 
+    // Reject a malformed date rather than letting Postgres raise 22007 on the cast.
+    const date = req.query.date;
+    const byDate = date !== undefined && date !== '';
+    if (byDate && !isDateOnly(date)) return fail(res, 'invalid_date', 400);
+
     if (req.query.floor !== undefined) {
       const t = tableFor(req.query.floor);
       if (!t) return fail(res, 'invalid_floor', 400);
-      const { rows } = await db.query(`select * from ${t} order by created_at desc limit $1`, [limit]);
+      const { rows } = byDate
+        ? await db.query(
+            `select * from ${t} where ${dayFilter(t)} order by created_at desc limit $2`,
+            [date, limit]
+          )
+        : await db.query(`select * from ${t} order by created_at desc limit $1`, [limit]);
       return res.json(rows);
     }
+
+    if (byDate) {
+      // Merged read: apply the same day filter inside each store's own table so the
+      // correlated refund lookup stays within the store that issued the invoice.
+      const union = FLOORS
+        .map((f) => `select * from ${ordersTable(f)} where ${dayFilter(ordersTable(f))}`)
+        .join(' union all ');
+      const { rows } = await db.query(
+        `select * from ( ${union} ) o order by created_at desc limit $2`,
+        [date, limit]
+      );
+      return res.json(rows);
+    }
+
     const { rows } = await db.query(
       `select * from ( ${ALL_ORDERS_UNION} ) o order by created_at desc limit $1`,
       [limit]

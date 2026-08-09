@@ -339,3 +339,144 @@ describe('reading history', () => {
     expect((await request(app).get('/api/orders')).status).toBe(401);
   });
 });
+
+describe('reading one trading day', () => {
+  // Write straight to the table so created_at can be back-dated.
+  const on = async (date, { total = 10, invoice = null, status = null, buyer = null, id } = {}) => {
+    const rowId = id || uid();
+    await db.query(
+      `insert into orders_main (id, items, sub, tax, total, pay, waiter, status, date, time, invoice_no, floor, buyer, created_at)
+       values ($1,'[]'::jsonb,$2,0,$2,'cash','test_cashier',$3,$4::text,'12:00:00',$5,'main',$6,$4::date + interval '12 hours')`,
+      [rowId, total, status, date, invoice, buyer]
+    );
+    return rowId;
+  };
+
+  const day = (d) => request(app).get(`/api/orders?floor=main&date=${d}`).set(...auth(cashierToken));
+
+  test('returns only that day', async () => {
+    await on('2026-06-01', { total: 10, invoice: 8001 });
+    await on('2026-06-02', { total: 20, invoice: 8002 });
+    await on('2026-06-03', { total: 30, invoice: 8003 });
+
+    const rows = (await day('2026-06-02')).body;
+    expect(rows).toHaveLength(1);
+    expect(Number(rows[0].total)).toBe(20);
+  });
+
+  test('an empty day is an empty list, not an error', async () => {
+    const res = await day('2026-06-09');
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual([]);
+  });
+
+  test('includes every sale made on the day, newest first', async () => {
+    await on('2026-06-04', { invoice: 8010, total: 10 });
+    await db.query(
+      `insert into orders_main (id, items, total, pay, status, date, time, invoice_no, floor, created_at)
+       values ('later-same-day','[]'::jsonb,50,'cash',null,'2026-06-04','18:00:00',8011,'main', timestamptz '2026-06-04 18:00')`
+    );
+    const rows = (await day('2026-06-04')).body;
+    expect(rows.map((r) => Number(r.invoice_no))).toEqual([8011, 8010]);
+  });
+
+  test('a refund issued on a LATER day still comes back with the sale it reverses', async () => {
+    // Otherwise the screen shows that sale as never returned and offers to return it again.
+    await on('2026-06-05', { invoice: 8020, total: 40 });
+    await on('2026-06-06', { invoice: 8021, total: -40, status: 'refund', buyer: 'return of #8020' });
+
+    const rows = (await day('2026-06-05')).body;
+    expect(rows.map((r) => Number(r.invoice_no)).sort()).toEqual([8020, 8021]);
+  });
+
+  test('does not drag in refunds against some OTHER day\'s invoice', async () => {
+    await on('2026-06-07', { invoice: 8030, total: 40 });
+    await on('2026-06-07', { invoice: 8031, total: -40, status: 'refund', buyer: 'return of #9999' });
+
+    const rows = (await day('2026-06-08')).body;
+    expect(rows).toEqual([]);
+  });
+
+  test('rejects a malformed date instead of erroring on the cast', async () => {
+    const res = await request(app).get('/api/orders?floor=main&date=last-tuesday').set(...auth(cashierToken));
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ error: 'invalid_date' });
+  });
+
+  test('rejects a SQL-injection attempt in the date', async () => {
+    const res = await request(app)
+      .get(`/api/orders?floor=main&date=${encodeURIComponent("2026-06-01'; drop table products; --")}`)
+      .set(...auth(cashierToken));
+    expect(res.status).toBe(400);
+    await expect(db.query('select 1 from products')).resolves.toBeDefined();
+  });
+
+  test('an empty date parameter falls back to the unfiltered list', async () => {
+    await on('2026-06-10', { invoice: 8040 });
+    await on('2026-06-11', { invoice: 8041 });
+    const res = await request(app).get('/api/orders?floor=main&date=').set(...auth(cashierToken));
+    expect(res.body).toHaveLength(2);
+  });
+
+  test('omitting the date keeps the old unfiltered behaviour', async () => {
+    await on('2026-06-12', { invoice: 8050 });
+    await on('2026-06-13', { invoice: 8051 });
+    const res = await request(app).get('/api/orders?floor=main').set(...auth(cashierToken));
+    expect(res.body).toHaveLength(2);
+  });
+
+  test('the merged (no-floor) read also honours the date', async () => {
+    await on('2026-06-14', { invoice: 8060 });
+    await on('2026-06-15', { invoice: 8061 });
+    const res = await request(app).get('/api/orders?date=2026-06-14').set(...auth(cashierToken));
+    expect(res.body).toHaveLength(1);
+    expect(Number(res.body[0].invoice_no)).toBe(8060);
+  });
+
+  // Jordan is UTC+3, so 00:00–03:00 local is the PREVIOUS day in UTC. That window is prime
+  // trading time for an off-licence, and grouping by created_at::date used to file all of
+  // it under yesterday. These pin the boundary to the store's clock.
+  describe('timezone boundary', () => {
+    const at = async (iso, invoice) => {
+      const id = uid();
+      await db.query(
+        `insert into orders_main (id, items, total, pay, floor, invoice_no, created_at)
+         values ($1,'[]'::jsonb,10,'cash','main',$2,$3::timestamptz)`,
+        [id, invoice, iso]
+      );
+      return id;
+    };
+
+    test('a 01:00 Amman sale belongs to that morning, not the previous day', async () => {
+      // 2026-06-20 01:00 +03:00 === 2026-06-19 22:00 UTC.
+      await at('2026-06-19T22:00:00Z', 8100);
+
+      expect((await day('2026-06-19')).body).toEqual([]);
+      const rows = (await day('2026-06-20')).body;
+      expect(rows).toHaveLength(1);
+      expect(Number(rows[0].invoice_no)).toBe(8100);
+    });
+
+    test('a 23:00 Amman sale stays on its own day', async () => {
+      // 2026-06-21 23:00 +03:00 === 2026-06-21 20:00 UTC.
+      await at('2026-06-21T20:00:00Z', 8101);
+      expect((await day('2026-06-21')).body).toHaveLength(1);
+      expect((await day('2026-06-22')).body).toEqual([]);
+    });
+
+    test('the day boundary sits at local midnight, not at 00:00 UTC', async () => {
+      await at('2026-06-22T20:59:00Z', 8102);   // 23:59 local on the 22nd
+      await at('2026-06-22T21:01:00Z', 8103);   // 00:01 local on the 23rd
+
+      expect((await day('2026-06-22')).body.map((r) => Number(r.invoice_no))).toEqual([8102]);
+      expect((await day('2026-06-23')).body.map((r) => Number(r.invoice_no))).toEqual([8103]);
+    });
+  });
+
+  test('still enforces the view gate when filtering by date', async () => {
+    await db.query("update app_users set allowed_views = '{sales}' where username = 'test_stockist'");
+    const limited = await login('stockist');
+    const res = await request(app).get('/api/orders?floor=main&date=2026-06-01').set(...auth(limited));
+    expect(res.status).toBe(403);
+  });
+});

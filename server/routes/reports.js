@@ -5,6 +5,7 @@
 const router = require('express').Router();
 const db = require('../db');
 const { requireSession, requireView } = require('../auth');
+const { tradingDate, todayInStore } = require('../tz');
 
 // 'history' is deliberately NOT accepted here. The history view shows a cashier their own
 // shift's receipts (that is GET /api/orders); these endpoints are aggregated revenue,
@@ -19,11 +20,15 @@ const gate = [requireSession, requireView('reports', 'dashboard')];
 // VOIDED sales are excluded from every figure. The row is kept, because the invoice number
 // must stay occupied (see migration 0006) — but a cancelled sale is not revenue, was not
 // sold, and must never appear in a Z-report. Filtering here means every report inherits it.
+// Windows are compared as TRADING DATES in the store's timezone, not as UTC instants.
+// Comparing a timestamptz against a bare date made the boundary land at 00:00 UTC = 03:00
+// in Amman, so the first three hours of each day's trade fell into the previous day's
+// report — the busiest three hours an off-licence has.
 function range(req) {
   const clauses = ['voided_at is null'];
   const params = [];
-  if (req.query.from) { params.push(req.query.from); clauses.push(`created_at >= $${params.length}`); }
-  if (req.query.to)   { params.push(req.query.to);   clauses.push(`created_at < ($${params.length}::date + 1)`); }
+  if (req.query.from) { params.push(req.query.from); clauses.push(`${tradingDate('created_at')} >= $${params.length}::date`); }
+  if (req.query.to)   { params.push(req.query.to);   clauses.push(`${tradingDate('created_at')} <= $${params.length}::date`); }
   return { where: 'where ' + clauses.join(' and '), params };
 }
 
@@ -50,12 +55,12 @@ router.get('/reports/daily', ...gate, async (req, res, next) => {
   try {
     const { where, params } = range(req);
     const { rows } = await db.query(
-      `select to_char(created_at::date, 'YYYY-MM-DD') as day,
+      `select to_char(${tradingDate('created_at')}, 'YYYY-MM-DD') as day,
               count(*)::int as orders,
               coalesce(sum(total),0) as revenue
          from orders_main ${where}
-         group by created_at::date
-         order by created_at::date desc
+         group by ${tradingDate('created_at')}
+         order by ${tradingDate('created_at')} desc
          limit 90`,
       params
     );
@@ -88,12 +93,14 @@ router.get('/reports/top-products', ...gate, async (req, res, next) => {
 // GET /api/reports/zreport?date=YYYY-MM-DD → daily close-out: count + total per payment method.
 router.get('/reports/zreport', ...gate, async (req, res, next) => {
   try {
-    const day = req.query.date || new Date().toISOString().slice(0, 10);
+    // Default to the store's today, not UTC's — between midnight and 03:00 in Amman those
+    // are different days, and the close-out must mean the shift the cashier just worked.
+    const day = req.query.date || todayInStore();
     const { rows } = await db.query(
       `select coalesce(pay,'?') as pay, count(*)::int as orders, coalesce(sum(total),0) as total
          from orders_main
         where voided_at is null
-          and created_at >= $1::date and created_at < ($1::date + 1)
+          and ${tradingDate('created_at')} = $1::date
         group by pay order by pay`,
       [day]
     );

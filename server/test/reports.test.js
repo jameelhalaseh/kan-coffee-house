@@ -227,9 +227,33 @@ describe('z-report', () => {
     expect(res.body.net).toBe(0);
   });
 
-  test('defaults to today when no date is given', async () => {
+  test('defaults to the store\'s today, not UTC\'s', async () => {
+    const storeToday = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Amman', year: 'numeric', month: '2-digit', day: '2-digit',
+    }).format(new Date());
     const res = await get('/api/reports/zreport', adminToken);
-    expect(res.body.date).toBe(new Date().toISOString().slice(0, 10));
+    expect(res.body.date).toBe(storeToday);
+  });
+
+  // The close-out has to cover the shift the cashier actually worked. With a UTC boundary
+  // the till would be counted at 03:00 local, so a sale at 00:30 landed in yesterday's
+  // Z-report and the drawer never balanced.
+  test('counts a post-midnight sale in the new day, not the old one', async () => {
+    await db.query(
+      `insert into orders_main (id, items, total, pay, floor, created_at)
+       values ('z-late','[]'::jsonb,25,'cash','main', timestamptz '2026-07-09T21:30:00Z')`   // 00:30 local on the 10th
+    );
+    expect((await get('/api/reports/zreport?date=2026-07-09', adminToken)).body.net).toBe(0);
+    expect((await get('/api/reports/zreport?date=2026-07-10', adminToken)).body.net).toBe(25);
+  });
+
+  test('still closes the day at local midnight', async () => {
+    await db.query(
+      `insert into orders_main (id, items, total, pay, floor, created_at)
+       values ('z-late-2','[]'::jsonb,40,'cash','main', timestamptz '2026-07-11T20:45:00Z')`  // 23:45 local on the 11th
+    );
+    expect((await get('/api/reports/zreport?date=2026-07-11', adminToken)).body.net).toBe(40);
+    expect((await get('/api/reports/zreport?date=2026-07-12', adminToken)).body.net).toBe(0);
   });
 });
 

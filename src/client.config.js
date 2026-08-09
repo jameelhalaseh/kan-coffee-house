@@ -13,7 +13,13 @@ export const CLIENT = {
   // English by default; the AR⇄EN toggle in Settings still works at runtime.
   locale: { default: "en", arabic: false },
   // Single store. Alcohol is taxable here → 16% VAT on the receipt.
-  store: { key: "main", taxPct: 16 },
+  //
+  // `timezone` is the shop's own clock, and it decides which trading day a sale belongs to.
+  // It must match STORE_TZ in the server env — the browser stamps date/time at checkout and
+  // the server groups reports by the same zone, so a mismatch splits a night's takings
+  // across two days. An off-licence sells hardest between 21:00 and 02:00, and Jordan is
+  // UTC+3, so "just use UTC" files every post-midnight sale under yesterday.
+  store: { key: "main", taxPct: 16, timezone: "Asia/Amman" },
   bill: {
     footerThanks: "Please drink responsibly. Thank you!",
     footerThanksAr: "نرجو الشرب بمسؤولية. شكراً لكم",
@@ -42,6 +48,7 @@ export function setLang(l) {
 }
 export function toggleLang() { setLang(ARABIC ? "en" : "ar"); }
 export const DEFAULT_FLOOR = CLIENT.store.key;       // "main" — the orders table + invoice key
+export const STORE_TZ = CLIENT.store.timezone || "Asia/Amman";
 export const TAX_RATE = (CLIENT.store.taxPct || 0) / 100;
 export const BILL = CLIENT.bill;
 export const SELLER = CLIENT.bill.seller;
