@@ -6,7 +6,12 @@ const router = require('express').Router();
 const db = require('../db');
 const { requireSession, requireView } = require('../auth');
 
-const gate = [requireSession, requireView('reports', 'dashboard', 'history')];
+// 'history' is deliberately NOT accepted here. The history view shows a cashier their own
+// shift's receipts (that is GET /api/orders); these endpoints are aggregated revenue,
+// margin and Z-report figures, which the README and this file have always said a cashier
+// cannot read. The gate previously included 'history', so the demo cashier could read all
+// of it — the docs were right and the code was wrong.
+const gate = [requireSession, requireView('reports', 'dashboard')];
 
 // Optional ?from=YYYY-MM-DD&to=YYYY-MM-DD window on created_at. Missing = all time.
 // Returns a WHERE fragment + params starting at $1.

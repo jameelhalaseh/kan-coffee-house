@@ -245,16 +245,19 @@ describe('role and view enforcement', () => {
     expect(res.status).toBe(403);
   });
 
-  test('the reports gate accepts the history view, not only reports', async () => {
-    // DOCUMENTED-BEHAVIOUR MISMATCH, pinned here so it cannot drift further unnoticed:
-    // README_DEMO.md and the header of server/routes/reports.js both say a cashier gets
-    // 403 from /api/reports/*, but the gate is requireView('reports','dashboard','history')
-    // and the demo cashier holds 'history' — so revenue reports are readable. This test
-    // asserts what the code ACTUALLY does. If the gate is tightened to 'reports' only,
-    // flip this expectation to 403.
+  test('the history view does NOT unlock aggregated revenue reports', async () => {
+    // Regression guard. The reports gate used to accept 'history', so the demo cashier —
+    // who holds it to see their own receipts — could also read revenue, margin and
+    // Z-report figures, contradicting both the README and the route's own header.
     const token = await login('cashier');   // allowed_views = sales, history
     const res = await request(app).get('/api/reports/summary').set(...auth(token));
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(403);
+  });
+
+  test('a cashier can still read their own sales history', async () => {
+    // The tightened reports gate must not cost the cashier the history screen itself.
+    const token = await login('cashier');
+    expect((await request(app).get('/api/orders?floor=main').set(...auth(token))).status).toBe(200);
   });
 });
 
