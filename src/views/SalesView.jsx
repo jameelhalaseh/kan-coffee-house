@@ -3,7 +3,7 @@ import api from '../api';
 import { C, S } from '../theme';
 import { ARABIC, STORE_NAME, DEFAULT_FLOOR, TAX_RATE } from '../client.config';
 import {
-  money, r3, splitInclusiveTax, uid, nowParts, cashSuggestions, catColor,
+  money, amount, r3, splitInclusiveTax, uid, nowParts, cashSuggestions, catColor,
 } from '../lib';
 import { HELD_KEY, PENDING_KEY, PAD_KEY, BC_NAME, DISPLAY_KEY } from '../constants';
 import printReceipt from '../receipt';
@@ -367,16 +367,42 @@ function SalesView({ user, notify }) {
               {ARABIC ? 'اضغط أو امسح منتجاً للبدء' : 'Tap or scan a product to start'}
             </div>
           )}
+          {/* A cart line reads like a receipt line: NAME on the left, what it costs on the
+              right. Nothing else, because nothing else is being checked.
+
+              It used to render "38.000 JOD × 1 = 38.000 JOD" under a truncated name — three
+              figures to say one thing, the currency twice, and the arithmetic given a full
+              line while the product name (the only part a cashier actually verifies against
+              the bottle in their hand) was the part cut off. At qty 1, which is most lines
+              in an off-licence, the multiplication is pure noise.
+
+              So: the name gets the full width and two lines to wrap into, the line total sits
+              beside it, and the unit price appears ONLY when qty > 1 — the one case where
+              "why is this line 76?" is a real question. Currency is stated once, at the
+              Total. The stepper moves to its own row, which also buys back proper touch
+              targets instead of four controls squeezed against a truncated name. */}
           {cart.map((l) => (
-            <div key={l.id} className="rise" style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0', borderBottom: `1px dashed ${C.line}` }}>
-              <button onClick={() => setEditLine(l)} style={{ flex: 1, minWidth: 0, background: 'none', border: 'none', textAlign: 'start', cursor: 'pointer', color: C.text, fontFamily: 'inherit', padding: 0 }}>
-                <div style={{ fontSize: 15, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{l.name} <span style={{ fontSize: 12, color: C.dim }}>✎</span></div>
-                <div style={{ fontSize: 13, color: C.accent, fontWeight: 700 }}>{money(l.price)} × {l.qty} = {money(l.price * l.qty)}</div>
+            <div key={l.id} className="rise" style={{ padding: '10px 0', borderBottom: `1px dashed ${C.line}` }}>
+              <button onClick={() => setEditLine(l)} style={{ width: '100%', display: 'flex', alignItems: 'baseline', gap: 10, background: 'none', border: 'none', textAlign: 'start', cursor: 'pointer', color: C.text, fontFamily: 'inherit', padding: 0 }}>
+                <span style={{ flex: 1, minWidth: 0, fontSize: 15, fontWeight: 600, lineHeight: 1.3 }}>
+                  {l.name} <span style={{ fontSize: 12, color: C.dim }}>✎</span>
+                </span>
+                <span style={{ flexShrink: 0, fontSize: 16, fontWeight: 800, fontVariantNumeric: 'tabular-nums' }}>
+                  {amount(l.price * l.qty)}
+                </span>
               </button>
-              <button onClick={() => setQty(l.id, l.qty - 1)} style={qtyBtn}>−</button>
-              <span style={{ minWidth: 28, textAlign: 'center', fontWeight: 800, fontSize: 16 }}>{l.qty}</span>
-              <button onClick={() => setQty(l.id, l.qty + 1)} style={qtyBtn}>+</button>
-              <button onClick={() => removeLine(l.id)} style={{ ...qtyBtn, color: C.red, borderColor: C.red }}>×</button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
+                <button onClick={() => setQty(l.id, l.qty - 1)} style={qtyBtn}>−</button>
+                <span style={{ minWidth: 28, textAlign: 'center', fontWeight: 800, fontSize: 16 }}>{l.qty}</span>
+                <button onClick={() => setQty(l.id, l.qty + 1)} style={qtyBtn}>+</button>
+                {l.qty !== 1 && (
+                  <span style={{ fontSize: 12, color: C.dim, fontVariantNumeric: 'tabular-nums' }}>
+                    × {amount(l.price)}
+                  </span>
+                )}
+                <span style={{ flex: 1 }} />
+                <button onClick={() => removeLine(l.id)} style={{ ...qtyBtn, color: C.red, borderColor: C.red }}>×</button>
+              </div>
             </div>
           ))}
         </div>
@@ -386,11 +412,12 @@ function SalesView({ user, notify }) {
           {TAX_RATE > 0 && total > 0 && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 10, fontSize: 14, color: C.dim }}>
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span>{ARABIC ? 'المجموع الفرعي' : 'Subtotal'}</span><span>{money(netAmount)}</span>
+                <span>{ARABIC ? 'المجموع الفرعي' : 'Subtotal'}</span>
+                <span style={{ fontVariantNumeric: 'tabular-nums' }}>{amount(netAmount)}</span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                 <span>{ARABIC ? `ضريبة ${Math.round(TAX_RATE * 100)}% (مشمولة)` : `VAT ${Math.round(TAX_RATE * 100)}% (incl.)`}</span>
-                <span>{money(taxAmount)}</span>
+                <span style={{ fontVariantNumeric: 'tabular-nums' }}>{amount(taxAmount)}</span>
               </div>
             </div>
           )}

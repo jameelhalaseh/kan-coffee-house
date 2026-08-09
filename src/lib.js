@@ -3,6 +3,9 @@ import { CURRENCY, STORE_TZ } from './client.config';
 
 // 3-decimal money (JOD fils precision).
 export const money = (n) => `${(Number(n) || 0).toFixed(3)} ${CURRENCY}`;
+// Bare amount, no currency suffix. For columns of figures (cart lines, the bill breakdown)
+// where the unit is stated once at the total and repeating it on every row is noise.
+export const amount = (n) => (Number(n) || 0).toFixed(3);
 
 // Round to fils before storing. Extracting VAT from a total produces values like
 // 9.93103448…; persisting that puts binary-float noise into the tax column and makes a

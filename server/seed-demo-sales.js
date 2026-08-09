@@ -58,9 +58,14 @@ async function main() {
         }
         if (!lines.length) continue;
 
-        const sub = r2(lines.reduce((s, l) => s + l.price * l.qty, 0));
-        const tax = r2(sub * TAX_RATE);
-        const total = r2(sub + tax);
+        // VAT is INCLUSIVE: the shelf price IS what the customer pays, and the tax is
+        // extracted from it. This used to add 16% ON TOP of the line prices, so every
+        // seeded sale rang up 16% more than the same basket does through the real till —
+        // and every revenue figure, Z-report and chart read from these rows.
+        // Mirrors splitInclusiveTax() in src/lib.js, which is what checkout uses.
+        const total = r2(lines.reduce((s, l) => s + l.price * l.qty, 0));
+        const tax = r2(total - total / (1 + TAX_RATE));
+        const sub = r2(total - tax);
         const id = `demo-${dateStr}-${i}`;
 
         const { rows: inv } = await client.query('select app_next_invoice($1) as n', [DEFAULT_FLOOR]);
