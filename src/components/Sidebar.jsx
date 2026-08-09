@@ -54,8 +54,9 @@ function NotificationsBell() {
       {open && <div onClick={() => setOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 999 }} />}
       {open && (
         // Fixed to the viewport, floating beside the sidebar — an absolute panel would be
-        // clipped by the sidebar's own width + overflow-y:auto.
-        <div className="rise" style={{ position: 'fixed', right: 236, bottom: 16, width: 320, maxHeight: '70vh', overflow: 'auto', background: C.panel, border: `1px solid ${C.line}`, borderRadius: 12, padding: 14, zIndex: 1000, boxShadow: '0 12px 40px rgba(0,0,0,.55)' }}>
+        // clipped by the sidebar's own width + overflow-y:auto. Opens to the RIGHT of the
+        // rail now that the rail is on the left (220px wide + 16px gap).
+        <div className="rise" style={{ position: 'fixed', left: 236, bottom: 16, width: 320, maxHeight: '70vh', overflow: 'auto', background: C.panel, border: `1px solid ${C.line}`, borderRadius: 12, padding: 14, zIndex: 1000, boxShadow: '0 12px 40px rgba(0,0,0,.55)' }}>
           <div style={{ fontWeight: 800, marginBottom: 6, color: C.red }}>{ARABIC ? 'مخزون منخفض' : 'Low stock'} ({low.length})</div>
           {low.slice(0, 8).map((p) => <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, padding: '3px 0' }}><span>{p.name}</span><span style={{ color: C.red }}>{Number(p.stock)}</span></div>)}
           {!count &&<div style={{ color: C.dim, fontSize: 13 }}>{ARABIC ? 'لا تنبيهات' : 'All good'}</div>}
@@ -69,7 +70,11 @@ function NotificationsBell() {
 function Sidebar({ user, view, setView, navViews, onLogout, canSeeStock, onChangePassword }) {
   return (
     <aside dir={ARABIC ? 'rtl' : 'ltr'} style={{
-      width: 220, flex: '0 0 220px', background: C.panel, borderInlineStart: `1px solid ${C.line}`,
+      // borderRight, not borderInlineEnd: the rail is pinned to the physical left of the
+      // window in both languages (App.jsx keeps the outer container dir="ltr"), but this
+      // element's own dir flips with the UI language — a logical property would jump the
+      // divider to the outside edge in Arabic.
+      width: 220, flex: '0 0 220px', background: C.panel, borderRight: `1px solid ${C.line}`,
       display: 'flex', flexDirection: 'column', gap: 10, padding: 14, boxSizing: 'border-box',
       position: 'sticky', top: 0, height: '100vh', overflowY: 'auto',
     }}>

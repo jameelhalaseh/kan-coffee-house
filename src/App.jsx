@@ -101,6 +101,10 @@ export default function App() {
 
   return (
     <div dir="ltr" style={{ minHeight: '100vh', background: C.bg, color: C.text, fontFamily: ARABIC ? "'Cairo','DM Sans',system-ui,sans-serif" : "'DM Sans','Cairo',system-ui,sans-serif", display: 'flex', alignItems: 'stretch' }}>
+      {/* Nav rail first in DOM order, so it sits on the physical LEFT — the outer container
+          is always dir="ltr" regardless of UI language, so order here is position. Keeping
+          it before <main> also means keyboard focus reaches navigation before content. */}
+      <Sidebar user={user} view={view} setView={setView} navViews={navViews} onLogout={handleLogout} canSeeStock={allowed('inventory') || allowed('reports')} onChangePassword={() => setPwOpen(true)} />
       <main dir={ARABIC ? 'rtl' : 'ltr'} style={{ flex: 1, minWidth: 0, padding: 16, boxSizing: 'border-box' }}>
         {!online && (
           <div style={{ background: C.red, color: '#fff', borderRadius: 10, padding: '10px 16px', marginBottom: 12, fontWeight: 800, fontSize: 15, textAlign: 'center' }}>
@@ -122,7 +126,6 @@ export default function App() {
           {view === 'settings' && <SettingsView user={user} isAdmin={isAdmin} notify={notify} />}
         </div>
       </main>
-      <Sidebar user={user} view={view} setView={setView} navViews={navViews} onLogout={handleLogout} canSeeStock={allowed('inventory') || allowed('reports')} onChangePassword={() => setPwOpen(true)} />
       {pwOpen && <ChangePasswordModal notify={notify} onClose={() => setPwOpen(false)} />}
       {toast && (
         <div className="toast-pop" style={{ position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)', background: toast.kind === 'red' ? C.red : toast.kind === 'green' ? C.green : C.panel2, color: toast.kind === 'info' ? C.text : C.accentText, padding: '13px 24px', borderRadius: 12, fontWeight: 700, fontSize: 15, boxShadow: '0 10px 34px rgba(0,0,0,.5)', zIndex: 1000 }}>
