@@ -115,7 +115,7 @@ export default function App() {
         <div style={{ maxWidth: view === 'sales' ? 'none' : 1180, marginInline: view === 'sales' ? 0 : 'auto' }}>
           {view === 'sales' && <SalesView user={user} notify={notify} />}
           {view === 'inventory' && allowed('inventory') && <InventoryView isAdmin={isAdmin} notify={notify} />}
-          {view === 'receive' && allowed('receive') && <ReceiveView isAdmin={isAdmin} notify={notify} />}
+          {view === 'receive' && allowed('receive') && <ReceiveView notify={notify} />}
           {view === 'history' && allowed('history') && <HistoryView user={user} notify={notify} />}
           {view === 'reports' && allowed('reports') && <ReportsView notify={notify} />}
           {view === 'assistant' && allowed('assistant') && <AssistantView notify={notify} />}

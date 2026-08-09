@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import api from '../api';
 import { C, S } from '../theme';
-import { ARABIC, VIEW_LABELS } from '../client.config';
+import { ARABIC, VIEWS, VIEW_LABELS } from '../client.config';
 import { money, catColor } from '../lib';
 import { Overlay } from '../components/ui';
 import { VIEW_ICONS } from '../components/Sidebar';
@@ -82,6 +82,15 @@ function Categories({ notify }) {
 // enable-disable / delete. `allowed_views` is enforced server-side per request.
 const VIEW_OPTS = ['inventory', 'receive', 'history', 'reports'];
 
+// What this user will ACTUALLY see in the nav, in nav order, without repeats. Must track
+// the `allowed()` rules in App.jsx — a permissions summary that disagrees with the app is
+// worse than none, because it is what the owner checks before handing over a till.
+function effectiveViews(u) {
+  const granted = new Set(['sales', ...(u.allowed_views || [])]);
+  if (granted.has('inventory')) granted.add('receive');
+  return VIEWS.filter((v) => v !== 'settings' && v !== 'assistant' && granted.has(v));
+}
+
 function Users({ me, notify }) {
   const [users, setUsers] = useState([]);
   const [editing, setEditing] = useState(null);    // user object | 'new'
@@ -120,7 +129,11 @@ function Users({ me, notify }) {
               </div>
               <div style={{ color: C.dim, fontSize: 12, marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                 @{u.username}
-                {u.role !== 'admin' && ' · ' + (ARABIC ? 'يرى: ' : 'sees: ') + ['sales', ...(u.allowed_views || [])].map((v) => VIEW_LABELS[v] || v).join('، ')}
+                {/* Sales is implicit for everyone, so it is prepended — but it is also a
+                    legal entry in allowed_views, and a user carrying it read "sees: Sales,
+                    Sales, History". Dedupe, and mirror App.jsx's rule that the `inventory`
+                    grant also opens Receive so the summary matches the actual nav. */}
+                {u.role !== 'admin' && ' · ' + (ARABIC ? 'يرى: ' : 'sees: ') + effectiveViews(u).map((v) => VIEW_LABELS[v] || v).join(ARABIC ? '، ' : ', ')}
                 {Number(u.wage) > 0 ? ' · ' + money(u.wage) + (ARABIC ? '/ساعة' : '/h') : ''}
               </div>
             </div>

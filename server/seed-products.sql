@@ -17,7 +17,11 @@ insert into suppliers (name, phone, note, active) values
   ('Amman Beverage Co.',     '+962 6 500 2200', 'Beer + mixers, Sunday/Wednesday',            true),
   ('Cellar Direct Wines',    '+962 7 900 3300', 'Wine & champagne, order 3 days ahead',       true),
   ('Local Arak Distillery',  '+962 7 900 4400', 'Arak only, cash on delivery',                true)
-on conflict do nothing;
+-- Genuinely idempotent now: migration 0008 added the unique index this clause needs.
+-- Before that index existed, `on conflict do nothing` only guarded the serial primary key
+-- (which cannot conflict), so every re-run of this seed inserted four more suppliers.
+on conflict (lower(btrim(name))) do update
+  set phone = excluded.phone, note = excluded.note, active = excluded.active;
 
 -- ── Catalogue ────────────────────────────────────────────────────────────────
 -- barcode | name | price (JOD, tax-inclusive display) | cat | cost | stock | unit

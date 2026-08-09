@@ -42,7 +42,8 @@ All seven shipped: `sales`, `inventory`, `receive`, `history`, `reports`, `assis
 
 - Suppliers & receive-stock flow: **yes** (4 demo suppliers seeded)
 - Staff time-clock: **yes**
-- AI assistant: **insights only** — deterministic low-stock/expiry alerts work with no key.
+- AI assistant: **insights only** — deterministic low-stock / dead-stock / top-seller alerts
+  work with no key.
   Set `NVIDIA_API_KEY` to turn on chat.
 - Thermal printer: **available** (ESC/POS over Web Serial, Chrome/Edge) — demo runs paperless
 - Cash drawer kick: **available**, untested without hardware
@@ -74,5 +75,9 @@ Real passwords are collected at seed time only (8+ chars), never written to the 
   prompt at checkout and/or an ID-check audit trail. That's schema + UI work, not a config
   change — flag as a follow-up phase if the client wants it.
 - Excise/licence numbers beyond the single `taxNo` receipt field would also be new work.
-- Batch/expiry tracking already exists (`batches.expiry`) if the client stocks anything
-  perishable — unused in this demo.
+- **Batch expiry tracking was removed** (migration 0007). Spirits, wine and beer do not
+  date-expire, so the field was skipped on every delivery and the alert panel was
+  permanently empty — which teaches staff to ignore the alert bell. The `batches` row
+  itself stays: supplier, cost and qty history behind every restock. If the client later
+  stocks something perishable (cream liqueurs, mixers, food), re-adding the column is a
+  migration plus one form field.

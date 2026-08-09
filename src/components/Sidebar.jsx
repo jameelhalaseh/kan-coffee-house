@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import api from '../api';
 import { C, S } from '../theme';
 import { ARABIC, STORE_NAME, VIEW_LABELS, toggleLang } from '../client.config';
@@ -24,19 +24,24 @@ function ClockButton() {
   );
 }
 
-// Bell badge: low-stock + expiring counts, with a dropdown list.
+// Bell badge: low-stock count, with a dropdown list. (Expiry was the other half of this
+// panel and was always empty in a liquor store — see migration 0007.)
 function NotificationsBell() {
   const [low, setLow] = useState([]);
-  const [exp, setExp] = useState([]);
   const [open, setOpen] = useState(false);
-  useEffect(() => {
+  // The sidebar mounts once and lives for the whole shift, so a single fetch here meant the
+  // badge froze at whatever it read at login: receive six bottles and it still claims they
+  // are out of stock, sell the last one and it never says so. Refetch on mount AND every
+  // time the panel is opened — opening it is exactly the moment the number has to be true.
+  const refresh = useCallback(() => {
     api.get('/reports/low-stock?threshold=5').then(setLow).catch(() => {});
-    api.get('/expiry?days=14').then(setExp).catch(() => {});
   }, []);
-  const count = low.length + exp.length;
+  useEffect(() => { refresh(); }, [refresh]);
+  const toggle = () => setOpen((o) => { if (!o) refresh(); return !o; });
+  const count = low.length;
   return (
     <div style={{ position: 'relative' }}>
-      <button onClick={() => setOpen((o) => !o)}
+      <button onClick={toggle}
         title={ARABIC ? 'تنبيهات المخزون' : 'Stock alerts'}
         style={{ ...S.btnGhost, height: 56, fontSize: 15, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
                  ...(count > 0 ? { borderColor: C.red, color: C.red } : {}) }}>
@@ -53,9 +58,7 @@ function NotificationsBell() {
         <div className="rise" style={{ position: 'fixed', right: 236, bottom: 16, width: 320, maxHeight: '70vh', overflow: 'auto', background: C.panel, border: `1px solid ${C.line}`, borderRadius: 12, padding: 14, zIndex: 1000, boxShadow: '0 12px 40px rgba(0,0,0,.55)' }}>
           <div style={{ fontWeight: 800, marginBottom: 6, color: C.red }}>{ARABIC ? 'مخزون منخفض' : 'Low stock'} ({low.length})</div>
           {low.slice(0, 8).map((p) => <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, padding: '3px 0' }}><span>{p.name}</span><span style={{ color: C.red }}>{Number(p.stock)}</span></div>)}
-          <div style={{ fontWeight: 800, margin: '10px 0 6px', color: C.accent }}>{ARABIC ? 'قرب الانتهاء' : 'Expiring'} ({exp.length})</div>
-          {exp.slice(0, 8).map((e) => <div key={e.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, padding: '3px 0' }}><span>{e.product}</span><span style={{ color: Number(e.days_left) < 0 ? C.red : C.accent }}>{e.expiry}</span></div>)}
-          {!count && <div style={{ color: C.dim, fontSize: 13 }}>{ARABIC ? 'لا تنبيهات' : 'All good'}</div>}
+          {!count &&<div style={{ color: C.dim, fontSize: 13 }}>{ARABIC ? 'لا تنبيهات' : 'All good'}</div>}
         </div>
       )}
     </div>

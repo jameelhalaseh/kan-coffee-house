@@ -1,7 +1,7 @@
 // /api/ai/* — owner's AI assistant (admin only).
 // Two layers:
-//   1. Deterministic insights (GET /ai/insights) — low stock, expiring batches (dairy
-//      flagged), dead stock, top sellers. Pure SQL, works with no API key, never wrong.
+//   1. Deterministic insights (GET /ai/insights) — low stock, dead stock, top sellers.
+//      Pure SQL, works with no API key, never wrong.
 //   2. LLM chat (POST /ai/chat) — proxies to NVIDIA's OpenAI-compatible API
 //      (integrate.api.nvidia.com). The server injects a live inventory snapshot into the
 //      system prompt so the model answers from real data, not guesses. The NVIDIA key
@@ -17,34 +17,18 @@ const gate = [requireSession, requireAdmin];
 const NVIDIA_BASE = process.env.NVIDIA_BASE_URL || 'https://integrate.api.nvidia.com/v1';
 const NVIDIA_MODEL = process.env.NVIDIA_MODEL || 'meta/llama-3.3-70b-instruct';
 const LOW_STOCK_DEFAULT = Number(process.env.AI_LOW_STOCK_THRESHOLD) || 5;
-const EXPIRY_DAYS_DEFAULT = 7;
-// Categories treated as dairy for the one-week expiry alert (case-insensitive substring match).
-const DAIRY_CATS = ['dairy', 'milk', 'ألبان', 'حليب', 'أجبان', 'اجبان', 'البان'];
-
-function isDairy(cat) {
-  const c = String(cat || '').toLowerCase();
-  return DAIRY_CATS.some((d) => c.includes(d));
-}
 
 // ── Data gathering (shared by /insights and the chat system prompt) ─────────────
-async function gatherInsights({ lowThreshold = LOW_STOCK_DEFAULT, expiryDays = EXPIRY_DAYS_DEFAULT } = {}) {
-  const [low, expiring, dead, top] = await Promise.all([
+// No expiry dimension: spirits, wine and beer do not carry a use-by date, so the alert was
+// permanently empty here (see migration 0007).
+async function gatherInsights({ lowThreshold = LOW_STOCK_DEFAULT } = {}) {
+  const [low, dead, top] = await Promise.all([
     // Products at/under the reorder threshold.
     db.query(
       `select id, barcode, name, cat, stock, unit from products
         where active and coalesce(stock,0) <= $1
         order by stock asc, name limit 100`,
       [lowThreshold]
-    ),
-    // Batches expiring within N days (or already expired) that still have qty.
-    db.query(
-      `select b.id, b.product_id, p.name, p.cat, b.qty, b.expiry,
-              (b.expiry - current_date)::int as days_left
-         from batches b join products p on p.id = b.product_id
-        where b.expiry is not null and b.qty > 0
-          and b.expiry <= current_date + ($1 || ' days')::interval
-        order by b.expiry asc limit 100`,
-      [expiryDays]
     ),
     // Dead stock: on the shelf but not sold in the last 30 days.
     db.query(
@@ -64,14 +48,10 @@ async function gatherInsights({ lowThreshold = LOW_STOCK_DEFAULT, expiryDays = E
     ),
   ]);
 
-  const expiringRows = expiring.rows.map((r) => ({ ...r, is_dairy: isDairy(r.cat) }));
   return {
     generated_at: new Date().toISOString(),
     low_stock_threshold: lowThreshold,
-    expiry_window_days: expiryDays,
     low_stock: low.rows,
-    expiring: expiringRows,
-    expiring_dairy: expiringRows.filter((r) => r.is_dairy),
     dead_stock: dead.rows,
     top_sellers_7d: top.rows,
   };
@@ -82,14 +62,12 @@ router.get('/ai/status', ...gate, (req, res) => {
   res.json({ configured: Boolean(process.env.NVIDIA_API_KEY), model: NVIDIA_MODEL });
 });
 
-// ── GET /ai/insights?threshold=5&days=7 → deterministic alerts, no LLM involved ──
+// ── GET /ai/insights?threshold=5 → deterministic alerts, no LLM involved ─────────
 router.get('/ai/insights', ...gate, async (req, res, next) => {
   try {
     const lowThreshold = Number.isFinite(Number(req.query.threshold)) && Number(req.query.threshold) >= 0
       ? Number(req.query.threshold) : LOW_STOCK_DEFAULT;
-    const expiryDays = Number.isFinite(parseInt(req.query.days, 10))
-      ? Math.min(Math.max(parseInt(req.query.days, 10), 1), 90) : EXPIRY_DAYS_DEFAULT;
-    res.json(await gatherInsights({ lowThreshold, expiryDays }));
+    res.json(await gatherInsights({ lowThreshold }));
   } catch (e) { next(e); }
 });
 
@@ -99,11 +77,10 @@ const chatLimiter = rateLimit({ windowMs: 5 * 60 * 1000, max: 20, standardHeader
 
 function buildSystemPrompt(snapshot) {
   return [
-    'You are the inventory assistant for a small grocery store (Dukkan POS).',
+    'You are the inventory assistant for a small liquor store (Dukkan POS).',
     'Answer briefly and practically for the store owner. Reply in the language the owner writes in (Arabic or English).',
     'Use ONLY the live data below — never invent stock numbers or products.',
     'When asked for recommendations: suggest reorder quantities from top sellers vs. low stock,',
-    'flag expiring items (especially dairy within 7 days) for discounting or removal,',
     'and point out dead stock tying up money.',
     '',
     'LIVE INVENTORY SNAPSHOT (JSON):',

@@ -7,7 +7,6 @@
 // Demo logins (any password):  admin / admin   ·   cashier / cashier
 const LS_KEY = 'dukkan_demo_db';
 const DEMO_BANNER = true;
-const isoIn = (days) => { const d = new Date(); d.setDate(d.getDate() + days); return d.toISOString().slice(0, 10); };
 
 const seed = () => ({
   products: [
@@ -23,8 +22,8 @@ const seed = () => ({
     { id: 2, name: 'Fresh Farms', phone: '079-555-9876', note: '', active: true },
   ],
   batches: [
-    { id: 1, product_id: 1, supplier_id: 1, qty: 24, cost: 0.9, expiry: isoIn(6), received_at: new Date().toISOString() },
-    { id: 2, product_id: 5, supplier_id: 2, qty: 30, cost: 0.6, expiry: isoIn(2), received_at: new Date().toISOString() },
+    { id: 1, product_id: 1, supplier_id: 1, qty: 24, cost: 0.9, received_at: new Date().toISOString() },
+    { id: 2, product_id: 5, supplier_id: 2, qty: 30, cost: 0.6, received_at: new Date().toISOString() },
   ],
   nextSupplier: 3,
   nextBatch: 3,
@@ -226,7 +225,7 @@ async function handle(method, path, body) {
   if (top === 'batches') {
     if (method === 'POST') {
       const qty = +body.qty || 0;
-      const b = { id: db.nextBatch++, product_id: +body.product_id, supplier_id: body.supplier_id ? +body.supplier_id : null, qty, cost: +body.cost || 0, expiry: body.expiry || null, received_at: new Date().toISOString() };
+      const b = { id: db.nextBatch++, product_id: +body.product_id, supplier_id: body.supplier_id ? +body.supplier_id : null, qty, cost: +body.cost || 0, received_at: new Date().toISOString() };
       db.batches.unshift(b);
       const p = db.products.find((x) => x.id === b.product_id); if (p) p.stock = (+p.stock || 0) + qty;
       save(db); return { ok: true, stock: p ? p.stock : null };
@@ -238,15 +237,6 @@ async function handle(method, path, body) {
         supplier: (db.suppliers.find((s) => s.id === b.supplier_id) || {}).name,
       }));
     }
-  }
-
-  if (top === 'expiry') {
-    const days = +query.days || 30;
-    const today = new Date(); today.setHours(0, 0, 0, 0);
-    return db.batches.filter((b) => b.expiry).map((b) => {
-      const left = Math.round((new Date(b.expiry) - today) / 86400000);
-      return { id: b.id, product_id: b.product_id, product: (db.products.find((p) => p.id === b.product_id) || {}).name, supplier: (db.suppliers.find((s) => s.id === b.supplier_id) || {}).name, qty: b.qty, expiry: b.expiry, days_left: left };
-    }).filter((x) => x.days_left <= days).sort((a, b) => a.days_left - b.days_left);
   }
 
   // ── users (admin) ──

@@ -4,11 +4,14 @@ import { C, S } from '../theme';
 import { ARABIC } from '../client.config';
 import { Field } from '../components/ui';
 
-function ReceiveView({ isAdmin, notify }) {
+// Receiving is the only legitimate way stock goes UP. No expiry field: a liquor store's
+// stock does not date-expire, and a control staff must skip on every delivery is a control
+// they learn to ignore.
+function ReceiveView({ notify }) {
   const [products, setProducts] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
   const [batches, setBatches] = useState([]);
-  const [form, setForm] = useState({ product_id: '', supplier_id: '', qty: '', cost: '', expiry: '' });
+  const [form, setForm] = useState({ product_id: '', supplier_id: '', qty: '', cost: '' });
   const [newSup, setNewSup] = useState({ name: '', phone: '' });
   const [busy, setBusy] = useState(false);
 
@@ -23,8 +26,8 @@ function ReceiveView({ isAdmin, notify }) {
     if (!form.product_id || !(Number(form.qty) > 0)) { notify(ARABIC ? 'اختر المنتج والكمية' : 'Pick product + qty', 'red'); return; }
     setBusy(true);
     try {
-      await api.post('/batches', { product_id: Number(form.product_id), supplier_id: form.supplier_id ? Number(form.supplier_id) : null, qty: Number(form.qty), cost: Number(form.cost) || 0, expiry: form.expiry || null });
-      setForm({ product_id: '', supplier_id: '', qty: '', cost: '', expiry: '' });
+      await api.post('/batches', { product_id: Number(form.product_id), supplier_id: form.supplier_id ? Number(form.supplier_id) : null, qty: Number(form.qty), cost: Number(form.cost) || 0 });
+      setForm({ product_id: '', supplier_id: '', qty: '', cost: '' });
       load();
       notify(ARABIC ? 'تم استلام البضاعة' : 'Stock received', 'green');
     } catch (_) { notify(ARABIC ? 'فشل' : 'Failed', 'red'); } finally { setBusy(false); }
@@ -32,7 +35,13 @@ function ReceiveView({ isAdmin, notify }) {
   const addSupplier = async () => {
     if (!newSup.name.trim()) return;
     try { await api.post('/suppliers', newSup); setNewSup({ name: '', phone: '' }); api.get('/suppliers').then(setSuppliers); notify(ARABIC ? 'تمت إضافة المورّد' : 'Supplier added', 'green'); }
-    catch (_) { notify(ARABIC ? 'فشل' : 'Failed', 'red'); }
+    catch (ex) {
+      // Name it, rather than a bare "Failed" against a list where the existing row is
+      // already visible two inches below the input.
+      notify(ex.message === 'exists'
+        ? (ARABIC ? 'المورّد موجود مسبقاً' : 'That supplier already exists')
+        : (ARABIC ? 'فشل' : 'Failed'), 'red');
+    }
   };
 
   const sel = { ...S.input, appearance: 'auto' };
@@ -56,7 +65,6 @@ function ReceiveView({ isAdmin, notify }) {
           <Field label={ARABIC ? 'الكمية' : 'Quantity'}><input style={S.input} type="number" step="0.001" value={form.qty} onChange={(e) => setForm({ ...form, qty: e.target.value })} /></Field>
           <Field label={ARABIC ? 'التكلفة/وحدة' : 'Cost/unit'}><input style={S.input} type="number" step="0.001" value={form.cost} onChange={(e) => setForm({ ...form, cost: e.target.value })} /></Field>
         </div>
-        <Field label={ARABIC ? 'تاريخ الانتهاء' : 'Expiry date'}><input style={S.input} type="date" value={form.expiry} onChange={(e) => setForm({ ...form, expiry: e.target.value })} /></Field>
         <button onClick={receive} disabled={busy} style={{ ...S.btn, padding: '14px', fontSize: 16, opacity: busy ? 0.6 : 1 }}>{ARABIC ? '＋ استلام وتحديث المخزون' : '＋ Receive & add to stock'}</button>
       </div>
 
@@ -81,7 +89,7 @@ function ReceiveView({ isAdmin, notify }) {
           {batches.slice(0, 12).map((b) => (
             <div key={b.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0', borderTop: `1px solid ${C.line}`, fontSize: 13 }}>
               <span>{b.product} <span style={{ color: C.dim }}>×{Number(b.qty)}</span></span>
-              <span style={{ color: C.dim }}>{b.supplier || '—'}{b.expiry ? ' · ⌛' + b.expiry : ''}</span>
+              <span style={{ color: C.dim }}>{b.supplier || '—'}</span>
             </div>
           ))}
           {!batches.length && <div style={{ color: C.dim, fontSize: 13 }}>{ARABIC ? 'لا شيء بعد' : 'Nothing yet'}</div>}

@@ -1,4 +1,4 @@
-// /api/suppliers, /api/batches, /api/expiry — the receiving side of inventory.
+// /api/suppliers, /api/batches — the receiving side of inventory.
 //
 // A received batch is the only path that ADDS stock outside an import or a manual
 // adjustment, so it has to bump the right product by the right amount and leave a record.
@@ -81,6 +81,34 @@ describe('suppliers', () => {
     expect(rows[0].active).toBe(false);
   });
 
+  // Duplicate names split one distributor's delivery history across two ids that are
+  // indistinguishable in the Receive dropdown. The demo DB had all four suppliers twice
+  // because the seed's `on conflict do nothing` had no unique constraint to fire on.
+  test('refuses a duplicate supplier name', async () => {
+    await newSupplier(adminToken, { name: 'Levant Spirits Import' });
+    const res = await newSupplier(adminToken, { name: 'Levant Spirits Import' });
+    expect(res.status).toBe(409);
+    expect(res.body).toEqual({ error: 'exists' });
+    expect((await listSuppliers(adminToken)).body).toHaveLength(1);
+  });
+
+  test('duplicate detection ignores case and surrounding space', async () => {
+    await newSupplier(adminToken, { name: 'Cellar Direct Wines' });
+    expect((await newSupplier(adminToken, { name: '  cellar direct wines ' })).status).toBe(409);
+  });
+
+  test('re-adding a deleted supplier revives it instead of 409-ing', async () => {
+    // Delete is a soft delete and nothing in the UI lists inactive suppliers, so a bare
+    // 409 here would make the name permanently unusable with no way to see why.
+    const { body } = await newSupplier(adminToken, { name: 'Back Again', phone: '079' });
+    await request(app).delete(`/api/suppliers/${body.id}`).set(...auth(adminToken));
+
+    const res = await newSupplier(adminToken, { name: 'Back Again', phone: '078' });
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ id: body.id, active: true, phone: '078' });
+    expect((await listSuppliers(adminToken)).body).toHaveLength(1);
+  });
+
   test('a cashier cannot delete a supplier', async () => {
     const { body } = await newSupplier(adminToken, { name: 'Protected' });
     const res = await request(app).delete(`/api/suppliers/${body.id}`).set(...auth(cashierToken));
@@ -111,10 +139,10 @@ describe('receiving a batch', () => {
     expect(await stockOf(p.id)).toBe(18);
   });
 
-  test('records the lot with its supplier and expiry', async () => {
+  test('records the lot with its supplier and cost', async () => {
     const p = await makeProduct({ stock: 0 });
     const { body: sup } = await newSupplier(adminToken, { name: 'Batch Supplier' });
-    await receive(adminToken, { product_id: p.id, supplier_id: sup.id, qty: 5, cost: 9, expiry: '2027-01-31' });
+    await receive(adminToken, { product_id: p.id, supplier_id: sup.id, qty: 5, cost: 9 });
 
     const rows = (await request(app).get('/api/batches').set(...auth(adminToken))).body;
     expect(rows).toHaveLength(1);
@@ -126,12 +154,29 @@ describe('receiving a batch', () => {
     const p = await makeProduct({ stock: 10 });
     await receive(adminToken, { product_id: p.id, qty: 5 });
 
-    // The route fires the audit insert without awaiting it, so give it a tick to land.
-    await new Promise((r) => setTimeout(r, 150));
+    // The audit row commits in the SAME transaction as the stock bump — no waiting, and
+    // no window in which stock has moved but nothing says who moved it.
     const { rows } = await db.query("select * from stock_log where kind = 'restock'");
     expect(rows).toHaveLength(1);
     expect(rows[0].changed_by).toBe('test_admin');
+    expect(Number(rows[0].old_qty)).toBe(10);
     expect(Number(rows[0].new_qty)).toBe(15);
+  });
+
+  test('an unknown product is a 404, and writes nothing', async () => {
+    // This used to fall through to `rows[0] && ...`: a 200 with stock null and an audit
+    // row full of nulls, for a delivery against a product that does not exist.
+    const res = await receive(adminToken, { product_id: 999999, qty: 5 });
+    expect(res.status).toBe(404);
+    expect((await db.query('select count(*)::int as n from batches')).rows[0].n).toBe(0);
+    expect((await db.query("select count(*)::int as n from stock_log where kind='restock'")).rows[0].n).toBe(0);
+  });
+
+  test('refuses a negative cost', async () => {
+    const p = await makeProduct({ stock: 10 });
+    const res = await receive(adminToken, { product_id: p.id, qty: 5, cost: -100 });
+    expect(res.status).toBe(400);
+    expect(await stockOf(p.id)).toBe(10);
   });
 
   const badBodies = {
@@ -187,58 +232,25 @@ describe('batch listing', () => {
   });
 });
 
-describe('expiry watch', () => {
-  const expiring = async (days) => {
-    const p = await makeProduct({ name: `Expires in ${days}` });
-    await db.query(
-      `insert into batches (product_id, qty, cost, expiry)
-       values ($1, 3, 5, current_date + ($2 || ' days')::interval)`,
-      [p.id, String(days)]
+// A liquor store's stock does not date-expire, so batch expiry — the column, the endpoint,
+// the alert panel and the AI dimension — was removed in migration 0007. These pin that it
+// stays gone, rather than being quietly reintroduced by a merge from the grocery template.
+describe('no expiry tracking', () => {
+  test('the expiry endpoint no longer exists', async () => {
+    expect((await request(app).get('/api/expiry').set(...auth(adminToken))).status).toBe(404);
+  });
+
+  test('the batches table has no expiry column', async () => {
+    const { rows } = await db.query(
+      "select 1 from information_schema.columns where table_name='batches' and column_name='expiry'"
     );
-    return p;
-  };
-
-  test('lists lots expiring within the default 30-day window', async () => {
-    await expiring(10);
-    await expiring(200);
-    const rows = (await request(app).get('/api/expiry').set(...auth(adminToken))).body;
-    expect(rows.map((r) => r.product)).toEqual(['Expires in 10']);
+    expect(rows).toHaveLength(0);
   });
 
-  test('honours ?days', async () => {
-    await expiring(10);
-    await expiring(60);
-    const rows = (await request(app).get('/api/expiry?days=90').set(...auth(adminToken))).body;
-    expect(rows).toHaveLength(2);
-  });
-
-  test('includes lots that already expired, with a negative days_left', async () => {
-    await expiring(-5);
-    const rows = (await request(app).get('/api/expiry').set(...auth(adminToken))).body;
-    expect(rows).toHaveLength(1);
-    expect(Number(rows[0].days_left)).toBe(-5);
-  });
-
-  test('soonest first', async () => {
-    await expiring(20);
-    await expiring(2);
-    const rows = (await request(app).get('/api/expiry').set(...auth(adminToken))).body;
-    expect(rows.map((r) => r.product)).toEqual(['Expires in 2', 'Expires in 20']);
-  });
-
-  test('ignores lots with no expiry date', async () => {
-    const p = await makeProduct();
-    await receive(adminToken, { product_id: p.id, qty: 5 });   // no expiry
-    expect((await request(app).get('/api/expiry').set(...auth(adminToken))).body).toEqual([]);
-  });
-
-  test('falls back to the default window for a junk ?days', async () => {
-    await expiring(10);
-    const rows = (await request(app).get('/api/expiry?days=abc').set(...auth(adminToken))).body;
-    expect(rows).toHaveLength(1);
-  });
-
-  test('requires a session', async () => {
-    expect((await request(app).get('/api/expiry')).status).toBe(401);
+  test('an expiry sent by an old client is ignored, not an error', async () => {
+    const p = await makeProduct({ stock: 0 });
+    const res = await receive(adminToken, { product_id: p.id, qty: 4, expiry: '2027-01-31' });
+    expect(res.status).toBe(200);
+    expect(await stockOf(p.id)).toBe(4);
   });
 });

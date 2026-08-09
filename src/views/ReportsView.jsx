@@ -2,19 +2,21 @@ import React, { useState, useEffect, useCallback } from 'react';
 import api from '../api';
 import { C, S } from '../theme';
 import { ARABIC, CURRENCY, DEFAULT_FLOOR } from '../client.config';
-import { money, catColor } from '../lib';
+import { money, catColor, todayInStore } from '../lib';
 import { Stat, Field } from '../components/ui';
 import { Donut, Spline, Scatter, Bars } from '../components/charts';
 
 function ReportsView({ notify }) {
-  const today = new Date().toISOString().slice(0, 10);
+  // The SHOP's today, not UTC's. Between midnight and 03:00 in Amman those are different
+  // days, and every default here ("Today" tab, the Z-report date, the dead-stock cutoff)
+  // has to mean the shift the cashier just worked — which is the busiest one.
+  const today = todayInStore();
   const [tab, setTab] = useState('today');
   const [from, setFrom] = useState(today);
   const [to, setTo] = useState(today);
   const [sum, setSum] = useState(null);
   const [top, setTop] = useState([]);
   const [low, setLow] = useState([]);
-  const [exp, setExp] = useState([]);
   const [abc, setAbc] = useState([]);
   const [zrep, setZrep] = useState(null);
   const [hours, setHours] = useState([]);
@@ -26,7 +28,6 @@ function ReportsView({ notify }) {
     api.get('/reports/summary' + qs).then(setSum).catch(() => notify(ARABIC ? 'تعذّر تحميل التقارير' : 'Failed to load reports', 'red'));
     api.get('/reports/top-products' + qs + '&limit=10').then(setTop).catch(() => {});
     api.get('/reports/low-stock?threshold=5').then(setLow).catch(() => {});
-    api.get('/expiry?days=30').then(setExp).catch(() => {});
     api.get('/reports/abc' + qs).then(setAbc).catch(() => {});
     api.get('/reports/zreport?date=' + today).then(setZrep).catch(() => {});
     api.get('/timeclock' + qs).then(setHours).catch(() => {});
@@ -245,30 +246,15 @@ function ReportsView({ notify }) {
 
       {tab === 'stock' && (
         <>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-            <div style={S.card}>
-              <div style={{ fontWeight: 800, marginBottom: 8, color: C.red }}>⚠ {ARABIC ? 'مخزون منخفض' : 'Low stock'} ({low.length})</div>
-              {low.map((p) => (
-                <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: `1px solid ${C.line}`, fontSize: 14 }}>
-                  <span>{p.name}</span><span style={{ color: Number(p.stock) <= 0 ? C.red : C.accent, fontWeight: 700 }}>{Number(p.stock)}</span>
-                </div>
-              ))}
-              {!low.length && <div style={{ color: C.dim, fontSize: 13 }}>{ARABIC ? 'كل المخزون جيد' : 'All stocked'}</div>}
-            </div>
-            <div style={S.card}>
-              <div style={{ fontWeight: 800, marginBottom: 8, color: C.accent }}>⌛ {ARABIC ? 'قرب الانتهاء (٣٠ يوم)' : 'Expiring soon (30d)'} ({exp.length})</div>
-              {exp.map((e) => {
-                const dl = Number(e.days_left);
-                const col = dl < 0 ? C.red : dl <= 7 ? C.accent : C.dim;
-                return (
-                  <div key={e.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: `1px solid ${C.line}`, fontSize: 14 }}>
-                    <span>{e.product} {e.supplier ? <span style={{ color: C.dim, fontSize: 12 }}>· {e.supplier}</span> : null}</span>
-                    <span style={{ color: col, fontWeight: 700 }}>{e.expiry} ({dl < 0 ? (ARABIC ? 'منتهي' : 'expired') : dl + (ARABIC ? ' يوم' : 'd')})</span>
-                  </div>
-                );
-              })}
-              {!exp.length && <div style={{ color: C.dim, fontSize: 13 }}>{ARABIC ? 'لا شيء قريب الانتهاء' : 'Nothing expiring soon'}</div>}
-            </div>
+          <div style={S.card}>
+            <div style={{ fontWeight: 800, marginBottom: 8, color: C.red }}>⚠ {ARABIC ? 'مخزون منخفض' : 'Low stock'} ({low.length})</div>
+            {low.map((p) => (
+              <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: `1px solid ${C.line}`, fontSize: 14 }}>
+                <span>{p.name} <span style={{ color: C.dim, fontSize: 12 }}>· {p.cat || '—'}</span></span>
+                <span style={{ color: Number(p.stock) <= 0 ? C.red : C.accent, fontWeight: 700 }}>{Number(p.stock)}</span>
+              </div>
+            ))}
+            {!low.length && <div style={{ color: C.dim, fontSize: 13 }}>{ARABIC ? 'كل المخزون جيد' : 'All stocked'}</div>}
           </div>
           <div style={S.card}>
             <div style={{ fontWeight: 800, marginBottom: 8, color: C.dim }}>🧊 {ARABIC ? 'مخزون راكد — لم يُبَع منذ ٣٠ يوماً' : 'Dead stock — no sales in 30 days'} ({deadStock.length})</div>

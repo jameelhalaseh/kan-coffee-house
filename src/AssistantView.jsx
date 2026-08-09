@@ -1,7 +1,7 @@
 /* eslint-disable */
 // AI Assistant view (admin only). Two panels:
-//   - Insights: deterministic alerts from GET /ai/insights — low stock, expiring batches
-//     (dairy within 7 days highlighted), dead stock, top sellers. Works without any AI key.
+//   - Insights: deterministic alerts from GET /ai/insights — low stock, dead stock, top
+//     sellers. Works without any AI key.
 //   - Chat: talks to POST /ai/chat (NVIDIA-backed). Hidden behind "not configured" note
 //     until NVIDIA_API_KEY is set on the server.
 import React, { useState, useEffect, useRef } from 'react';
@@ -13,13 +13,9 @@ const L = ARABIC ? {
   title: 'المساعد الذكي',
   refresh: 'تحديث',
   lowStock: 'مخزون منخفض',
-  expiring: 'قريب الانتهاء (٧ أيام)',
-  dairy: 'ألبان',
   deadStock: 'مخزون راكد (٣٠ يوم بدون مبيعات)',
   topSellers: 'الأكثر مبيعاً (٧ أيام)',
   none: 'لا يوجد',
-  days: 'يوم',
-  expired: 'منتهي',
   chatTitle: 'اسأل المساعد',
   placeholder: 'اكتب سؤالك… مثال: ماذا يجب أن أطلب هذا الأسبوع؟',
   send: 'إرسال',
@@ -27,19 +23,15 @@ const L = ARABIC ? {
   notConfigured: 'الدردشة غير مفعّلة — أضف NVIDIA_API_KEY على الخادم. التنبيهات أعلاه تعمل بدون مفتاح.',
   error: 'تعذر الحصول على رد. حاول مجدداً.',
   q1: 'ماذا يجب أن أعيد طلبه؟',
-  q2: 'ما هي منتجات الألبان القريبة من الانتهاء؟',
+  q2: 'ما هو المخزون الراكد الذي يجب تصريفه؟',
   q3: 'أعطني توصيات لتحسين المخزون',
 } : {
   title: 'AI Assistant',
   refresh: 'Refresh',
   lowStock: 'Low stock',
-  expiring: 'Expiring soon (7 days)',
-  dairy: 'Dairy',
   deadStock: 'Dead stock (no sales in 30 days)',
   topSellers: 'Top sellers (7 days)',
   none: 'None',
-  days: 'd',
-  expired: 'expired',
   chatTitle: 'Ask the assistant',
   placeholder: 'Type a question… e.g. What should I reorder this week?',
   send: 'Send',
@@ -47,7 +39,7 @@ const L = ARABIC ? {
   notConfigured: 'Chat is not enabled — set NVIDIA_API_KEY on the server. The alerts above work without a key.',
   error: 'Could not get a reply. Try again.',
   q1: 'What should I reorder?',
-  q2: 'Which dairy items are close to expiry?',
+  q2: 'Which dead stock should I clear out?',
   q3: 'Give me recommendations to improve my inventory',
 };
 
@@ -101,9 +93,6 @@ export default function AssistantView({ notify }) {
     } finally { setBusy(false); }
   };
 
-  const expiringDairy = ((insights && insights.expiring) || []).filter((r) => r.is_dairy);
-  const expiringOther = ((insights && insights.expiring) || []).filter((r) => !r.is_dairy);
-
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
@@ -116,24 +105,6 @@ export default function AssistantView({ notify }) {
           <List rows={insights && insights.low_stock} render={(r) => (<>
             <span>{r.name}{r.cat ? <span style={{ color: C.dim }}> · {r.cat}</span> : null}</span>
             <b style={{ color: C.red }}>{Number(r.stock)} {r.unit === 'kg' ? 'kg' : ''}</b>
-          </>)} />
-        </Card>
-
-        <Card title={`${L.expiring} — ${L.dairy}`} accent={C.accent}>
-          <List rows={expiringDairy} render={(r) => (<>
-            <span>{r.name} <span style={{ color: C.dim }}>×{Number(r.qty)}</span></span>
-            <b style={{ color: r.days_left < 0 ? C.red : C.accent }}>
-              {r.days_left < 0 ? L.expired : `${r.days_left} ${L.days}`}
-            </b>
-          </>)} />
-        </Card>
-
-        <Card title={L.expiring} accent={C.blue}>
-          <List rows={expiringOther} render={(r) => (<>
-            <span>{r.name} <span style={{ color: C.dim }}>×{Number(r.qty)}</span></span>
-            <b style={{ color: r.days_left < 0 ? C.red : C.blue }}>
-              {r.days_left < 0 ? L.expired : `${r.days_left} ${L.days}`}
-            </b>
           </>)} />
         </Card>
 

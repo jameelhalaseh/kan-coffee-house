@@ -107,42 +107,13 @@ describe('deterministic insights', () => {
     expect((await get('/api/ai/insights?threshold=25', adminToken)).body.low_stock).toHaveLength(1);
   });
 
-  test('clamp an absurd ?days window instead of passing it through', async () => {
-    const res = await get('/api/ai/insights?days=99999', adminToken);
-    expect(res.body.expiry_window_days).toBe(90);
-  });
-
-  test('flag expiring batches, marking dairy separately', async () => {
-    const milk = await makeProduct({ name: 'Fresh Milk', cat: 'Dairy', stock: 10 });
-    const gin = await makeProduct({ name: 'Gin', cat: 'Gin', stock: 10 });
-    for (const id of [milk.id, gin.id]) {
-      await db.query(
-        `insert into batches (product_id, qty, cost, expiry) values ($1, 5, 2, current_date + interval '3 days')`,
-        [id]
-      );
-    }
-    const res = await get('/api/ai/insights?days=7', adminToken);
-    expect(res.body.expiring).toHaveLength(2);
-    expect(res.body.expiring_dairy.map((r) => r.name)).toEqual(['Fresh Milk']);
-  });
-
-  test('recognise an Arabic dairy category', async () => {
-    const p = await makeProduct({ name: 'لبن', cat: 'ألبان', stock: 5 });
-    await db.query(
-      `insert into batches (product_id, qty, cost, expiry) values ($1, 5, 2, current_date + interval '2 days')`,
-      [p.id]
-    );
+  test('carry no expiry dimension at all', async () => {
+    // Migration 0007 removed it. An empty "expiring" panel is worse than no panel: it
+    // trains the owner to skim past the alerts that DO matter.
     const res = await get('/api/ai/insights', adminToken);
-    expect(res.body.expiring_dairy).toHaveLength(1);
-  });
-
-  test('ignore batches with nothing left in them', async () => {
-    const p = await makeProduct({ stock: 10 });
-    await db.query(
-      `insert into batches (product_id, qty, cost, expiry) values ($1, 0, 2, current_date + interval '2 days')`,
-      [p.id]
-    );
-    expect((await get('/api/ai/insights', adminToken)).body.expiring).toEqual([]);
+    expect(res.body.expiring).toBeUndefined();
+    expect(res.body.expiring_dairy).toBeUndefined();
+    expect(res.body.expiry_window_days).toBeUndefined();
   });
 
   test('report stock that has not sold in 30 days as dead', async () => {
