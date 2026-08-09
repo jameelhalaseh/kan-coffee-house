@@ -1,0 +1,70 @@
+# PLATFORM STACK — created ONCE on the VPS, shared by every client.
+#
+#   caddy     → the only thing listening on the public internet (80/443), terminates TLS,
+#               gets certificates from Let's Encrypt automatically, routes each subdomain
+#               to that client's app container.
+#   postgres  → one server, one DATABASE PER CLIENT. Same isolation as separate containers
+#               for a third of the RAM, and one backup job covers everything.
+#
+# Postgres deliberately publishes NO ports. It is reachable only over the private `data`
+# network — from the host you reach it with `docker compose exec`, never over the internet.
+#
+#   cd /srv/platform && docker compose up -d
+
+name: platform
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    container_name: caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"        # HTTP/3
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data     # certificates — losing this means re-issuing, so it's a volume
+      - caddy_config:/config
+    networks:
+      - web
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_SUPERUSER_PASSWORD:?set POSTGRES_SUPERUSER_PASSWORD in deploy/platform/.env}
+      POSTGRES_DB: postgres
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+      - ./backups:/backups   # pg_dump writes here; the host cron ships them offsite
+    networks:
+      - data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    # Postgres defaults assume a dedicated box. These suit a small shared VPS.
+    command: >
+      postgres
+      -c shared_buffers=256MB
+      -c max_connections=100
+      -c log_min_duration_statement=1000
+
+volumes:
+  caddy_data:
+  caddy_config:
+  pg_data:
+
+# Client stacks attach to these as external networks.
+#   web  → caddy ⇄ app     (HTTP)
+#   data → app ⇄ postgres  (SQL)
+# Splitting them means a compromised app container still can't talk to another client's app.
+networks:
+  web:
+    name: web
+  data:
+    name: data

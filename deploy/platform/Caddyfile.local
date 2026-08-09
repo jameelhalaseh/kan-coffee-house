@@ -1,0 +1,17 @@
+# Local-dev Caddy: TLS off, routes by Host header on http://localhost:8080.
+# Mirrors the production Caddyfile's one-vhost-per-client shape so multi-client routing
+# can be tested without DNS or certificates.
+{
+	auto_https off
+}
+http://liquor.localhost {
+	encode zstd gzip
+	reverse_proxy liquor-pos-app:3001
+}
+http://dukkan.localhost {
+	encode zstd gzip
+	reverse_proxy dukkan-pos-app:3001
+}
+http:// {
+	respond "Not found" 404
+}

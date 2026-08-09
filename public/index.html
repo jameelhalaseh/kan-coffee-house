@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/>
+    <meta name="theme-color" content="#0f1117"/>
+    <title>Liquor Store POS</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com"/>
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&family=DM+Sans:wght@400;600;700;800&display=swap" rel="stylesheet"/>
+    <style>
+      *{margin:0;padding:0;box-sizing:border-box;}
+      body{background:#0f1117;font-family:'DM Sans','Cairo',system-ui,sans-serif;}
+      [dir="rtl"], [dir="rtl"] *{font-family:'Cairo','DM Sans',system-ui,sans-serif;}
+      /* Touch feedback: every button presses down, hoverable ones lighten */
+      button{transition:transform .08s ease, filter .12s ease, box-shadow .12s ease;}
+      button:active{transform:scale(.96);}
+      @media (hover:hover){ button:hover{filter:brightness(1.12);} }
+      button:disabled{cursor:not-allowed;}
+      /* Slim dark scrollbars */
+      ::-webkit-scrollbar{width:8px;height:8px;}
+      ::-webkit-scrollbar-track{background:transparent;}
+      ::-webkit-scrollbar-thumb{background:#2c2f3a;border-radius:8px;}
+      ::-webkit-scrollbar-thumb:hover{background:#3a3e4d;}
+      /* Entry animations */
+      @keyframes rise{from{opacity:0;transform:translateY(10px);}to{opacity:1;transform:translateY(0);}}
+      @keyframes pop{0%{transform:translateX(-50%) translateY(16px);opacity:0;}100%{transform:translateX(-50%) translateY(0);opacity:1;}}
+      .rise{animation:rise .25s ease both;}
+      .toast-pop{animation:pop .22s cubic-bezier(.16,1,.3,1) both;}
+      input:focus{border-color:#f0a830 !important;box-shadow:0 0 0 2px rgba(240,168,48,.2);}
+    </style>
+      <link rel="manifest" href="%PUBLIC_URL%/manifest.json"/>
+    <link rel="icon" href="%PUBLIC_URL%/icons/icon-192.png"/>
+    <link rel="apple-touch-icon" href="%PUBLIC_URL%/icons/icon-512.png"/>
+    <meta name="mobile-web-app-capable" content="yes"/>
+    <meta name="apple-mobile-web-app-capable" content="yes"/>
+    <meta name="apple-mobile-web-app-title" content="Liquor Store"/>
+</head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>

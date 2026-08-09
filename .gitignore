@@ -1,0 +1,21 @@
+.env
+.env.local
+.env.production
+*.secret
+node_modules/
+build/
+*.asc
+*.pem
+*.key
+
+# VPS deploy secrets (deploy/.env, platform/.env) and local dump artifacts
+deploy/.env
+deploy/platform/.env
+deploy/platform/backups/
+
+# Test + tooling artifacts
+coverage/
+*.log
+npm-debug.log*
+.DS_Store
+Thumbs.db

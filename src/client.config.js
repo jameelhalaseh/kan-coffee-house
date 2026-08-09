@@ -1,0 +1,59 @@
+// ──────────────────────────────────────────────────────────────────────────
+// CLIENT CONFIG — single source of truth for everything client-specific.
+//
+// Liquor Store build: a single-store, barcode-driven retail POS. There are no
+// floors/tables — the app is a catalogue + scan-to-cart sales screen. The store key is
+// fixed to "main" (mirrors server/floors.js); it names the orders_main table and is the
+// invoice-numbering key.
+// ──────────────────────────────────────────────────────────────────────────
+
+export const CLIENT = {
+  storeName: "Liquor Store",
+  currency: "JOD",
+  // English by default; the AR⇄EN toggle in Settings still works at runtime.
+  locale: { default: "en", arabic: false },
+  // Single store. Alcohol is taxable here → 16% VAT on the receipt.
+  store: { key: "main", taxPct: 16 },
+  bill: {
+    footerThanks: "Please drink responsibly. Thank you!",
+    footerThanksAr: "نرجو الشرب بمسؤولية. شكراً لكم",
+    invoicePrefix: "LQ",
+    // Seller identity printed on the receipt header.
+    seller: { name: "Liquor Store", location: "Amman, Jordan", taxNo: "1234567" },
+  },
+};
+
+// ── Derived constants (consumed by App.jsx) ───────────────────────────────────
+export const STORE_NAME = CLIENT.storeName;
+export const CURRENCY = CLIENT.currency;
+
+// ── Language (runtime toggle, persisted) ──────────────────────────────────────
+// Default from config; user can switch AR⇄EN at runtime. Every UI string is an
+// `ARABIC ? ar : en` ternary, so flipping this + reloading re-renders the whole app.
+const LANG_KEY = "liquor_store_lang";
+const defaultLang = CLIENT.locale.arabic ? "ar" : (CLIENT.locale.default || "en");
+let _lang = defaultLang;
+try { _lang = localStorage.getItem(LANG_KEY) || defaultLang; } catch (_) {}
+export const ARABIC = _lang === "ar";
+export const LANG = _lang;
+export function setLang(l) {
+  try { localStorage.setItem(LANG_KEY, l); } catch (_) {}
+  if (typeof window !== "undefined") window.location.reload();
+}
+export function toggleLang() { setLang(ARABIC ? "en" : "ar"); }
+export const DEFAULT_FLOOR = CLIENT.store.key;       // "main" — the orders table + invoice key
+export const TAX_RATE = (CLIENT.store.taxPct || 0) / 100;
+export const BILL = CLIENT.bill;
+export const SELLER = CLIENT.bill.seller;
+
+// Nav views available in this build. `reports` is server-enforced (allowed_views).
+export const VIEWS = ["sales", "inventory", "receive", "history", "reports", "assistant", "settings"];
+export const VIEW_LABELS = {
+  sales: ARABIC ? "البيع" : "Sales",
+  inventory: ARABIC ? "المخزون" : "Inventory",
+  receive: ARABIC ? "استلام" : "Receive",
+  history: ARABIC ? "السجل" : "History",
+  reports: ARABIC ? "التقارير" : "Reports",
+  assistant: ARABIC ? "المساعد الذكي" : "AI Assistant",
+  settings: ARABIC ? "الإعدادات" : "Settings",
+};

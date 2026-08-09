@@ -1,0 +1,25 @@
+# Local Postgres for the Liquor Store POS demo.
+#   docker compose up -d          → starts db on localhost:5433
+#   docker compose down -v        → wipes it
+# Port 5433 (not 5432) so it never collides with a Postgres already installed on the host.
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: liquor-pos-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: pos
+      POSTGRES_PASSWORD: pos
+      POSTGRES_DB: liquorpos
+    ports:
+      - "5433:5432"
+    volumes:
+      - liquor_pos_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pos -d liquorpos"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  liquor_pos_data:

@@ -1,0 +1,15 @@
+node_modules
+build
+dist-electron
+.git
+.env
+.env.local
+.env.production
+npm-debug.log*
+*.md
+!README_DEMO.md
+docs
+heroku
+graphify-out
+.planning
+.claude

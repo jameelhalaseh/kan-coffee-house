@@ -1,0 +1,41 @@
+# Caddy — TLS + routing for every client on this box.
+# Certificates are issued and renewed automatically; there is no certbot, no cron, no
+# renewal to forget. Add a client = add a block + `docker compose exec caddy caddy reload
+# --config /etc/caddy/Caddyfile`. No downtime for the other clients.
+
+{
+	# Let's Encrypt contacts this address about expiry problems. Use a real inbox.
+	email admin@7uloultech.com
+}
+
+# ── Liquor Store ─────────────────────────────────────────────────────────────
+liquor.7uloultech.com {
+	encode zstd gzip
+
+	# The container name from the client stack; Docker's DNS resolves it on the `web` network.
+	reverse_proxy liquor-pos-app:3001
+
+	# HSTS. Only turn this on once HTTPS is confirmed working — browsers honour max-age
+	# even after you remove the header, so a mistake here locks the domain to HTTPS.
+	header Strict-Transport-Security "max-age=31536000; includeSubDomains"
+
+	log {
+		output file /data/logs/liquor.log {
+			roll_size 10MB
+			roll_keep 5
+		}
+	}
+}
+
+# ── Template for the next client ─────────────────────────────────────────────
+# dukkan.7uloultech.com {
+# 	encode zstd gzip
+# 	reverse_proxy dukkan-pos-app:3001
+# 	header Strict-Transport-Security "max-age=31536000; includeSubDomains"
+# }
+
+# Anything hitting the bare domain or an unknown subdomain gets a flat 404 rather than
+# being silently routed to whichever client happens to be first.
+7uloultech.com, www.7uloultech.com {
+	respond "Not found" 404
+}
