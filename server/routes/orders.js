@@ -172,7 +172,10 @@ router.delete('/:id', requireSession, requireAdmin, async (req, res, next) => {
       const o = found.rows[0];
       if (!o) continue;
 
-      if (o.voided_at) { result = { already: true, invoice_no: o.invoice_no }; break; }
+      // invoice_no is bigint, which pg hands back as a STRING. /api/invoice/next already
+      // returns it as a number, so coerce here too — otherwise the same field has two JSON
+      // types depending on which endpoint produced it.
+      if (o.voided_at) { result = { already: true, invoice_no: Number(o.invoice_no) }; break; }
 
       await client.query(
         `update ${t} set voided_at = now(), voided_by = $2, void_reason = $3, status = 'void'
@@ -203,7 +206,7 @@ router.delete('/:id', requireSession, requireAdmin, async (req, res, next) => {
           }
         }
       }
-      result = { invoice_no: o.invoice_no };
+      result = { invoice_no: Number(o.invoice_no) };
       break;
     }
 

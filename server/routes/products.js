@@ -170,6 +170,128 @@ router.patch('/products/:id/stock', requireSession, requireView('inventory'), as
   }
 });
 
+// ── Bulk CSV import ───────────────────────────────────────────────────────────
+// POST /api/products/import { items: [...], mode: 'upsert' | 'insert' }
+//
+// ADMIN-ONLY, and for the same reason pricing is admin-only everywhere else: this route
+// writes prices for the whole catalogue in one call, so it is the single largest
+// under-ringing lever in the system.
+//
+// The client (src/csv.js) parses and validates the file, but the payload is still an
+// untrusted JSON array — every field is re-coerced and re-checked here. Server-side
+// limits are the ones that matter.
+//
+// The whole import is ONE transaction: a bad row 400s and nothing is written, so the
+// catalogue is never left half-imported. Rows with a barcode upsert on it (mode
+// 'upsert'); rows without one are always inserts. Every created or repriced row gets an
+// attributable stock_log entry in the same transaction.
+const MAX_IMPORT_ROWS = 5000;
+
+router.post('/products/import', requireSession, requireAdmin, async (req, res, next) => {
+  const body = req.body || {};
+  const items = Array.isArray(body.items) ? body.items : null;
+  const mode = body.mode === 'insert' ? 'insert' : 'upsert';
+
+  if (!items) return fail(res, 'invalid', 400);
+  if (!items.length) return fail(res, 'empty', 400);
+  if (items.length > MAX_IMPORT_ROWS) return fail(res, 'too_many_rows', 413);
+
+  // Re-validate before opening a transaction, so a malformed payload never holds a
+  // connection or a row lock.
+  const clean = [];
+  for (let i = 0; i < items.length; i++) {
+    const it = items[i] || {};
+    const name = String(it.name || '').trim();
+    if (!name || name.length > 200) return fail(res, 'invalid', 400);
+
+    const barcodeRaw = it.barcode == null ? '' : String(it.barcode).trim();
+    if (barcodeRaw && !/^[\w.-]{1,64}$/.test(barcodeRaw)) return fail(res, 'invalid', 400);
+
+    const num = (v) => {
+      const n = Number(v ?? 0);
+      return Number.isFinite(n) && n >= 0 ? n : null;
+    };
+    const price = num(it.price); const cost = num(it.cost); const stock = num(it.stock);
+    if (price === null || cost === null || stock === null) return fail(res, 'invalid', 400);
+
+    clean.push({
+      barcode: barcodeRaw || null,
+      name,
+      price, cost, stock,
+      cat: it.cat == null || String(it.cat).trim() === '' ? null : String(it.cat).trim().slice(0, 100),
+      unit: it.unit === 'kg' ? 'kg' : 'ea',
+      active: it.active === false ? false : true,
+    });
+  }
+
+  const client = await db.pool.connect();
+  try {
+    await client.query('begin');
+    let created = 0;
+    let updated = 0;
+
+    for (const it of clean) {
+      if (it.barcode && mode === 'upsert') {
+        // Look the row up (and lock it) FIRST rather than reading the pre-image back out
+        // of RETURNING: inside one transaction the row is ours until commit, and the
+        // old stock value this yields is unambiguous — which is what the audit row needs.
+        const existing = await client.query(
+          'select id, stock from products where barcode = $1 for update', [it.barcode]
+        );
+        const prev = existing.rows[0];
+
+        let id;
+        if (prev) {
+          await client.query(
+            `update products set
+               name = $1, price = $2, cat = $3, cost = $4, stock = $5,
+               unit = $6, active = $7, updated_at = now()
+             where id = $8`,
+            [it.name, it.price, it.cat, it.cost, it.stock, it.unit, it.active, prev.id]
+          );
+          id = prev.id;
+          updated++;
+        } else {
+          const ins = await client.query(
+            `insert into products (barcode, name, price, cat, cost, stock, unit, active)
+             values ($1,$2,$3,$4,$5,$6,$7,$8) returning id`,
+            [it.barcode, it.name, it.price, it.cat, it.cost, it.stock, it.unit, it.active]
+          );
+          id = ins.rows[0].id;
+          created++;
+        }
+
+        await client.query(
+          `insert into stock_log (kind,item_id,name,old_qty,new_qty,changed_by)
+           values ($1,$2,$3,$4,$5,$6)`,
+          [prev ? 'import' : 'create', String(id), it.name,
+           prev ? Number(prev.stock ?? 0) : 0, it.stock, req.user.username]
+        );
+      } else {
+        const { rows } = await client.query(
+          `insert into products (barcode, name, price, cat, cost, stock, unit, active)
+           values ($1,$2,$3,$4,$5,$6,$7,$8) returning id`,
+          [it.barcode, it.name, it.price, it.cat, it.cost, it.stock, it.unit, it.active]
+        );
+        created++;
+        await client.query(
+          `insert into stock_log (kind,item_id,name,old_qty,new_qty,changed_by)
+           values ('create',$1,$2,0,$3,$4)`,
+          [String(rows[0].id), it.name, it.stock, req.user.username]
+        );
+      }
+    }
+
+    await client.query('commit');
+    res.json({ ok: true, created, updated, total: clean.length });
+  } catch (e) {
+    try { await client.query('rollback'); } catch (_) { /* connection already dead */ }
+    dbError(res, next, e);
+  } finally {
+    client.release();
+  }
+});
+
 // DELETE /api/products/:id (admin) — hard delete.
 router.delete('/products/:id', requireSession, requireAdmin, async (req, res, next) => {
   try {

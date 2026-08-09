@@ -26,6 +26,9 @@
     "start": "react-scripts start",
     "build": "cross-env INLINE_RUNTIME_CHUNK=false react-scripts build",
     "server": "node server/index.js",
+    "test:server": "jest --config jest.server.config.js",
+    "test:server:coverage": "jest --config jest.server.config.js --coverage",
+    "test:all": "react-scripts test --watchAll=false && jest --config jest.server.config.js",
     "migrate": "node server/migrate.js",
     "seed:admin": "node server/seed-admin.js",
     "seed:users": "node server/seed-users.js",
@@ -53,6 +56,8 @@
     ]
   },
   "devDependencies": {
-    "cross-env": "^10.1.0"
+    "cross-env": "^10.1.0",
+    "jest": "^27.5.1",
+    "supertest": "^7.2.2"
   }
 }

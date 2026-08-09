@@ -57,7 +57,7 @@ create index        if not exists idx_orders_main_created on orders_main(created
 -- ── Stock audit log (append-only) ─────────────────────────────────────────────
 create table if not exists stock_log (
   id         bigint generated always as identity primary key,
-  kind       text,            -- 'sale' | 'adjust' | 'restock' | 'create'
+  kind       text,            -- 'sale' | 'adjust' | 'restock' | 'create' | 'import'
   item_id    text,            -- product id as text
   name       text,
   old_qty    numeric,

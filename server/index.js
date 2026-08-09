@@ -77,6 +77,15 @@ const limiterKey = (req) => {
   return ip.includes(':') ? ip.split(':').slice(0, 4).join(':') : ip;
 };
 
+// The ceilings are sized for a whole shop behind one IP (see each mount below), but a
+// busy multi-till store — or a test run, which logs in far more often than a human — needs
+// to raise them without editing code. Each is an env override with the shipped value as
+// the default; a non-numeric or absent value keeps the default.
+const envMax = (name, fallback) => {
+  const n = Number(process.env[name]);
+  return Number.isFinite(n) && n > 0 ? n : fallback;
+};
+
 const limiter = (windowMs, max) => rateLimit({
   windowMs, max, standardHeaders: true, legacyHeaders: false,
   keyGenerator: limiterKey,   // IPv6 normalisation handled above
@@ -86,18 +95,18 @@ const limiter = (windowMs, max) => rateLimit({
 // Throttle auth endpoints (login + reset) to blunt credential stuffing. Per-USERNAME
 // lockout lives in server/auth.js (pin_attempts) — this is the per-caller layer on top.
 app.use(['/api/auth/login', '/api/auth/request-reset', '/api/auth/confirm-reset'],
-  limiter(15 * 60 * 1000, 30));
+  limiter(15 * 60 * 1000, envMax('AUTH_RATE_LIMIT_MAX', 30)));
 
 // Expensive read paths: the reports aggregates and the AI insight queries scan 30 days of
 // orders with jsonb_array_elements. On a shared VPS one authenticated user hammering these
 // degrades EVERY client on the box, so they get their own tight budget.
 app.use(['/api/reports', '/api/ai/insights', '/api/timeclock', '/api/jofotara/pending'],
-  limiter(5 * 60 * 1000, 120));
+  limiter(5 * 60 * 1000, envMax('REPORTS_RATE_LIMIT_MAX', 120)));
 
 // Global backstop for everything else under /api. Sized for a WHOLE SHOP behind one IP:
 // several tills checking out continuously (a sale is ~5 calls) sit far under 4 req/s,
 // while a scripted flood hits the ceiling immediately.
-app.use('/api', limiter(5 * 60 * 1000, 1200));
+app.use('/api', limiter(5 * 60 * 1000, envMax('API_RATE_LIMIT_MAX', 1200)));
 
 app.get('/healthz', (_req, res) => res.json({ status: 'ok' }));
 app.use('/api', require('./routes'));
@@ -133,5 +142,12 @@ app.use((err, _req, res, _next) => {
   res.status(500).json({ error: 'server' });
 });
 
-const PORT = process.env.PORT || 3001;
-app.listen(PORT, () => console.log(`CashierPOS API listening on :${PORT}`));
+// Bind a port only when this file is the entrypoint (`npm run server`). Required by
+// supertest, which mounts `app` directly and needs no listener of its own — without this
+// guard every test run would race the dev server for :3001.
+if (require.main === module) {
+  const PORT = process.env.PORT || 3001;
+  app.listen(PORT, () => console.log(`CashierPOS API listening on :${PORT}`));
+}
+
+module.exports = app;
