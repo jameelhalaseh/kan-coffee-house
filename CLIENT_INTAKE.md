@@ -29,9 +29,10 @@ each maps 1:1 to `src/client.config.js`, seed data, or a Heroku env var.
 - Categories: Whiskey, Vodka, Gin, Rum, Tequila, Brandy, Arak, Liqueur, Wine, Beer,
   Champagne, Mixers, Accessories
 - Initial catalogue import: **demo seed** — 57 products in `server/seed-products.sql`.
-  Real client catalogue must be loaded by editing that SQL file — this build has CSV
-  *export* only, there is no import in the UI. Flag catalogue import as a follow-up if the
-  client needs to self-serve.
+  A real client catalogue can now be loaded from the UI: Inventory → ⬆ Import CSV (admin
+  only), columns `barcode, name, price, cost, stock, cat, unit, active`. Ask the client for
+  their stock list as a spreadsheet at the meeting; editing the SQL seed is no longer
+  required.
 - Weighted items: **no** — bottles and cans are unit-priced (`unit = 'ea'`)
 
 ## 4. Views / modules

@@ -51,6 +51,23 @@ Codes to try:
 | `5281000010012` | Arak Touma 750ml                  | 23.00   |
 | `9999999999999` | (nothing — triggers quick-add)    | —       |
 
+## Loading a real catalogue (CSV import)
+
+The demo catalogue is seeded SQL, but a client can load their own without touching the
+repo. Inventory → **⬆ Import CSV** (admin only — the import rewrites prices across the
+whole catalogue, so it is gated exactly like every other pricing path).
+
+Columns: `barcode, name, price, cost, stock, cat, unit, active`. Only `name` is required,
+and common spreadsheet header spellings are accepted (`SKU`, `Product Name`, `Qty`,
+`Department`…). The modal has a **Download template** link.
+
+The file is parsed and checked in the browser first, so bad rows are listed with their
+line numbers before anything is written; the valid rows can still be imported. Rows whose
+barcode already exists either update that product or reject the whole file, your choice.
+The import runs as ONE transaction — a failure part-way through leaves the catalogue
+untouched — and every product created or repriced gets a `stock_log` row naming the admin
+who did it.
+
 ## What's seeded
 
 - **57 products** across Whiskey, Vodka, Gin, Rum, Tequila, Brandy, Arak, Liqueur, Wine,
@@ -76,9 +93,26 @@ Checked end-to-end against the local database:
 - receive stock: batch recorded against a supplier, product stock increased
 - reports: summary, top products, low stock
 - time clock in/out
-- permissions: `cashier` gets 403 on `/api/timeclock` and `/api/ai/insights`; no token → 401
+- permissions: `cashier` gets 403 on `/api/timeclock`, `/api/ai/insights`,
+  `/api/reports/*` and `/api/products/import`; no token → 401
 - AI assistant insights (deterministic path — chat needs `NVIDIA_API_KEY`)
 - `CI=true npm run build` compiles clean
+- CSV import: upsert on barcode, per-row validation, all-or-nothing rollback, audit rows
+
+## Tests
+
+```bash
+npm test              # frontend (jsdom): pure helpers + CSV parsing — 46 tests
+npm run test:server   # API against Postgres: 333 tests, needs `npm run db:up`
+npm run test:all      # both
+npm run test:server:coverage
+```
+
+`test:server` creates and migrates its own throwaway database (`liquorpos_test`) on every
+run, so it never touches the demo data. Point `TEST_DATABASE_URL` elsewhere for CI.
+
+Server coverage is 80% of statements (89% across the route modules). The gaps are
+`email.js` (EmailJS forgot-password) and the `migrate`/`reset-data` CLI scripts.
 
 ## Config
 
