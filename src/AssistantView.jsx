@@ -9,6 +9,16 @@ import api from './api';
 import { ARABIC } from './client.config';
 import { C, S } from './theme';
 
+// The vendor name, wrapped in a Unicode isolate (FSI … PDI).
+//
+// "7uloultech" is Latin script starting with a DIGIT, dropped into an Arabic sentence. Under
+// the bidi algorithm the leading "7" is a European Number whose direction is resolved from
+// its surroundings, so in an RTL paragraph the digit can be reordered away from the letters
+// it belongs to — the company name renders wrong in the one place it must not. The isolate
+// makes the token a self-contained run: it lays out left-to-right internally and is placed
+// as a single unit in the Arabic sentence, regardless of what sits either side of it.
+const BRAND = '⁨7uloultech⁩';
+
 const L = ARABIC ? {
   title: 'المساعد الذكي',
   refresh: 'تحديث',
@@ -20,7 +30,10 @@ const L = ARABIC ? {
   placeholder: 'اكتب سؤالك… مثال: ماذا يجب أن أطلب هذا الأسبوع؟',
   send: 'إرسال',
   thinking: 'يفكر…',
-  notConfigured: 'الدردشة غير مفعّلة — أضف NVIDIA_API_KEY على الخادم. التنبيهات أعلاه تعمل بدون مفتاح.',
+  offTitle: 'المساعد الذكي غير مفعّل',
+  offBody: `لتفعيل المساعد الذكي، تواصل مع ${BRAND} لمزيد من المعلومات والأسعار.`,
+  offNote: 'التنبيهات أعلاه تعمل بدون تفعيل.',
+  notConfigured: `المساعد الذكي غير مفعّل — تواصل مع ${BRAND} للمعلومات والأسعار.`,
   error: 'تعذر الحصول على رد. حاول مجدداً.',
   q1: 'ماذا يجب أن أعيد طلبه؟',
   q2: 'ما هو المخزون الراكد الذي يجب تصريفه؟',
@@ -36,7 +49,10 @@ const L = ARABIC ? {
   placeholder: 'Type a question… e.g. What should I reorder this week?',
   send: 'Send',
   thinking: 'Thinking…',
-  notConfigured: 'Chat is not enabled — set NVIDIA_API_KEY on the server. The alerts above work without a key.',
+  offTitle: 'AI Assistant is not enabled',
+  offBody: `To enable the AI Assistant, contact ${BRAND} for more information and pricing.`,
+  offNote: 'The alerts above work without it.',
+  notConfigured: `AI Assistant is not enabled — contact ${BRAND} for information and pricing.`,
   error: 'Could not get a reply. Try again.',
   q1: 'What should I reorder?',
   q2: 'Which dead stock should I clear out?',
@@ -123,8 +139,22 @@ export default function AssistantView({ notify }) {
 
       <div style={S.card}>
         <h3 style={h3}>{L.chatTitle}{status && status.configured ? <span style={{ color: C.dim, fontWeight: 400, textTransform: 'none' }}> · {status.model}</span> : null}</h3>
+        {/* The chat half of this screen is a paid add-on. What used to sit here was a line
+            of operator instructions ("set NVIDIA_API_KEY on the server") — meaningless to
+            the shop owner looking at it, who is the person deciding whether to buy it. So:
+            say plainly that it is off, say who to call, and say that the insights above
+            still work so the screen doesn't read as broken. */}
         {status && !status.configured && (
-          <div style={{ color: C.accent, fontSize: 13, marginBottom: 10 }}>{L.notConfigured}</div>
+          <div style={{
+            marginBottom: 14, padding: '14px 16px', borderRadius: 10,
+            background: `${C.accent}14`, border: `1px solid ${C.accent}55`,
+          }}>
+            <div style={{ fontWeight: 800, fontSize: 15, color: C.accent, marginBottom: 4 }}>
+              ✨ {L.offTitle}
+            </div>
+            <div style={{ fontSize: 14, color: C.text, lineHeight: 1.5 }}>{L.offBody}</div>
+            <div style={{ fontSize: 12, color: C.dim, marginTop: 6 }}>{L.offNote}</div>
+          </div>
         )}
         <div style={{ maxHeight: 340, overflowY: 'auto', marginBottom: 10 }}>
           {messages.map((m, i) => (
