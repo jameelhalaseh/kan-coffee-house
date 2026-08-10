@@ -8,7 +8,12 @@ import { VIEW_ICONS } from '../components/Sidebar';
 
 function SettingsView({ user, isAdmin, notify }) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16, maxWidth: 760 }}>
+    // marginInline:auto, and a wider measure. App.jsx already centres a 1180px column for
+    // every non-Sales view, but this panel capped itself at 760 INSIDE that column with no
+    // centring of its own — so it hugged the column's left edge and read as misaligned
+    // against a large empty right margin. Centring it in the space it actually has, and
+    // giving the category chips and the user rows more room to breathe.
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16, maxWidth: 920, marginInline: 'auto', width: '100%' }}>
       {isAdmin && <Categories notify={notify} />}
       {isAdmin && <Users me={user} notify={notify} />}
       {!isAdmin && (
@@ -48,7 +53,9 @@ function Categories({ notify }) {
   };
 
   return (
-    <div style={{ ...S.card, display: 'flex', flexDirection: 'column', gap: 12 }}>
+    // Roomier than the default 16px card padding: this screen is a handful of panels on a
+    // wide monitor, not a dense table, so the content was tight against its own border.
+    <div style={{ ...S.card, padding: 22, display: 'flex', flexDirection: 'column', gap: 14 }}>
       <div style={{ fontWeight: 800, fontSize: 16 }}>🏷 {ARABIC ? 'فئات المنتجات' : 'Product categories'}</div>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
         {cats.map((c) => (
@@ -104,7 +111,7 @@ function Users({ me, notify }) {
   };
 
   return (
-    <div style={{ ...S.card, display: 'flex', flexDirection: 'column', gap: 10 }}>
+    <div style={{ ...S.card, padding: 22, display: 'flex', flexDirection: 'column', gap: 12 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div style={{ fontWeight: 800, fontSize: 16 }}>👥 {ARABIC ? 'المستخدمون والصلاحيات' : 'Users & permissions'}</div>
         <button onClick={() => setEditing('new')} style={S.btn}>＋ {ARABIC ? 'مستخدم' : 'User'}</button>
