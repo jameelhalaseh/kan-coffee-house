@@ -29,38 +29,50 @@ function CategoryGrid({ cards, total, onPick, emptyHint }) {
       {cards.map((c) => {
         const art = c.orphan ? null : categoryImage(c.name);
         return (
+          // ARTWORK ABOVE, LABEL BELOW — they are stacked siblings, never overlapping layers.
+          //
+          // Two earlier attempts failed the same way. Floating the bottle over the card and
+          // reserving 62%/46% for label/art sums past 100%, so "Accessories" and "Champagne"
+          // ran under the glass. Making them side-by-side flex siblings fixed the overlap but
+          // left a ~83px text column, too narrow for "Accessories" at 17px — it broke
+          // mid-word — while squeezing the bottle down to 63px.
+          //
+          // Stacking removes the competition instead of rationing it: the name gets the full
+          // card width, and the artwork gets the full card width too. Categories are
+          // user-named, so a name longer than any percentage you pick will always exist.
           <button key={c.key || 'none'} onClick={() => onPick(c.key)} className="rise" style={{
-            position: 'relative',
-            display: 'flex', flexDirection: 'column', justifyContent: 'space-between', gap: 10, height: 132, padding: '14px 16px',
+            display: 'flex', flexDirection: 'column', gap: 8, height: 168, padding: '12px 16px 14px',
             borderRadius: 14, border: `1px solid ${c.orphan ? C.line : catColor(c.name, 0.45)}`,
             background: c.orphan ? C.panel2 : `linear-gradient(150deg, ${catColor(c.name, 0.26)} 0%, ${C.panel2} 70%)`,
             color: C.text, cursor: 'pointer', textAlign: 'start', fontFamily: 'inherit', overflow: 'hidden',
           }}>
-            {/* The bottle sits on the trailing edge at full tile height, absolutely
-                positioned so it never competes with the label for horizontal space — the
-                tile is only ~170px wide at its narrowest and the name must stay readable.
-                object-fit: contain is what guarantees the whole bottle is visible at every
-                tile width; `cover` would fill the corner but decapitate it. */}
-            {art && (
+            {/* object-fit: contain is what keeps the whole bottle visible as the grid
+                reflows — the tile is minmax(170px, 1fr) so its width changes constantly,
+                and `cover` would fill the slot but decapitate every bottle. */}
+            {art ? (
               <img src={art} alt="" aria-hidden="true" draggable="false" style={{
-                position: 'absolute', insetInlineEnd: -6, top: 0, height: '100%', width: '46%',
+                flex: 1, minHeight: 0, width: '100%',
                 objectFit: 'contain', objectPosition: 'center', pointerEvents: 'none',
-                filter: 'drop-shadow(0 6px 14px rgba(0,0,0,.45))',
+                filter: 'drop-shadow(0 8px 16px rgba(0,0,0,.5))',
               }} />
+            ) : (
+              // No artwork is a supported state: the category list is user-editable, so new
+              // categories WILL appear with none. Fall back to the coloured letter badge.
+              <span style={{ flex: 1, minHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <span style={{
+                  width: 46, height: 46, borderRadius: 14, background: c.orphan ? C.line : catColor(c.name),
+                  color: c.orphan ? C.dim : '#0f1117',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 22,
+                }}>{c.orphan ? '?' : c.name.slice(0, 1)}</span>
+              </span>
             )}
-            {/* No artwork is a supported state: the category list is user-editable, so new
-                categories WILL appear with none. Fall back to the coloured letter badge. */}
-            {!art && (
+            <span style={{ minWidth: 0 }}>
+              {/* Wraps at word boundaries to a second line, then clips. Never mid-word. */}
               <span style={{
-                width: 34, height: 34, borderRadius: 10, background: c.orphan ? C.line : catColor(c.name),
-                color: c.orphan ? C.dim : '#0f1117',
-                display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 17,
-              }}>{c.orphan ? '?' : c.name.slice(0, 1)}</span>
-            )}
-            {art && <span />}
-            <span style={{ position: 'relative', maxWidth: '62%' }}>
-              <span style={{ display: 'block', fontSize: 17, fontWeight: 800, lineHeight: 1.2 }}>{c.name}</span>
-              <span style={{ display: 'block', marginTop: 4, fontSize: 12, color: C.dim }}>
+                display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden',
+                fontSize: 17, fontWeight: 800, lineHeight: 1.2,
+              }}>{c.name}</span>
+              <span style={{ display: 'block', marginTop: 3, fontSize: 12, color: C.dim }}>
                 {c.count} {ARABIC ? 'صنف' : c.count === 1 ? 'item' : 'items'}
               </span>
             </span>

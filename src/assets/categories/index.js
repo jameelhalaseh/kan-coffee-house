@@ -10,9 +10,14 @@
 // service worker precaches them, and the shelves still render with no network — this till
 // keeps selling offline, and a blank grid is not an acceptable offline state.
 //
-// KEYED BY LOWERCASED CATEGORY NAME. The category list is user-editable, so a category with
-// no artwork here is normal and must fall back to the coloured letter badge — see
-// categoryImage() below, which is the only way this map should be read.
+// KEYED BY LOWERCASED CATEGORY NAME, which is the category string as stored on the product
+// — NOT the source filename. `tonic water.png` is the artwork for the Mixers shelf and
+// `champain.png` was a typo; both are renamed on the way in, because the key has to match
+// what the database actually holds or the tile silently falls back.
+//
+// The category list is user-editable, so a category with no artwork here is normal and must
+// fall back to the coloured letter badge — see categoryImage() below, which is the only way
+// this map should be read.
 import whiskey from './whiskey.png';
 import vodka from './vodka.png';
 import gin from './gin.png';
@@ -23,8 +28,14 @@ import arak from './arak.png';
 import liqueur from './liqueur.png';
 import wine from './wine.png';
 import beer from './beer.png';
+import champagne from './champagne.png';
+import mixers from './mixers.png';
+import accessories from './accessories.png';
 
-const IMAGES = { whiskey, vodka, gin, rum, tequila, brandy, arak, liqueur, wine, beer };
+const IMAGES = {
+  whiskey, vodka, gin, rum, tequila, brandy, arak, liqueur, wine, beer,
+  champagne, mixers, accessories,
+};
 
 // Resolve a category name to its artwork, or null when there is none.
 // Matching is lowercased+trimmed only — deliberately loose enough to survive "Whiskey" vs

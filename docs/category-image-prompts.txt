@@ -20,10 +20,16 @@ background is immediately obvious.
 
 WHY SQUARE, AND WHY THOSE NUMBERS
 
-The tile is a CSS grid cell: `minmax(170px, 1fr)` wide by 132px tall, so its
+The tile is a CSS grid cell: `minmax(170px, 1fr)` wide by 168px tall, so its
 width changes with the window — roughly 170px on a small screen, up to ~300px on
 a 1920px counter monitor. The image must therefore never depend on a fixed
 aspect ratio.
+
+The artwork sits ABOVE the label, not beside it, and both get the full card
+width. That was learned the hard way: side-by-side layouts have to ration the
+width between name and picture, and a category name longer than whatever split
+you choose always turns up — the list is user-editable. Stacked, they cannot
+collide at any tile width or name length.
 
 A square source displayed with `object-fit: contain` always shows the whole
 subject whatever the tile does. Nothing is ever cropped, at any window size —
