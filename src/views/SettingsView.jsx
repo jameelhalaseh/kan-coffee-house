@@ -1,5 +1,7 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import api from '../api';
+import normalizeCategoryImage from '../imageNormalize';
+import { artFor, refreshCategoryArt, loadCategoryArt, artLoaded, hasUpload, subscribe } from '../categoryArt';
 import { C, S } from '../theme';
 import { ARABIC, VIEWS, VIEW_LABELS } from '../client.config';
 import { money, catColor } from '../lib';
@@ -31,6 +33,13 @@ function Categories({ notify }) {
   const [cats, setCats] = useState([]);
   const [counts, setCounts] = useState({});   // category name → how many products use it
   const [input, setInput] = useState('');
+  const [picking, setPicking] = useState(null);   // category whose image dialog is open
+  const [, bumpArt] = useState(0);
+  useEffect(() => {
+    const off = subscribe(() => bumpArt((n) => n + 1));
+    if (!artLoaded()) loadCategoryArt();
+    return off;
+  }, []);
   useEffect(() => {
     api.get('/settings/categories').then((r) => {
       try { setCats(r && r.value ? JSON.parse(r.value) : []); } catch (_) { setCats([]); }
@@ -61,7 +70,12 @@ function Categories({ notify }) {
     const name = input.trim();
     if (!name) return;
     if (cats.some((c) => c.toLowerCase() === name.toLowerCase())) { notify(ARABIC ? 'الفئة موجودة' : 'Category exists', 'red'); return; }
-    persist([...cats, name]); setInput('');
+    persist([...cats, name]);
+    setInput('');
+    // Offer the picture straight away. A category created without one shows a letter badge,
+    // and the moment to fix that is while the person is still thinking about this category —
+    // not on some later visit to Settings they never make.
+    setPicking(name);
   };
   // Only an EMPTY category can be removed. The ✕ is not rendered at all on one that is in
   // use — a disabled-looking button still invites the click, and the person this guards
@@ -93,11 +107,18 @@ function Categories({ notify }) {
                 padding: used ? '9px 14px' : '9px 8px 9px 14px',
                 background: catColor(c, 0.14), border: `1px solid ${catColor(c, 0.55)}`, borderRadius: 20, fontSize: 14, fontWeight: 700,
               }}>
-              <span style={{ width: 10, height: 10, borderRadius: 5, background: catColor(c) }} />
+              {/* The tile's own artwork, so what you see here is what the shelf shows. */}
+              {artFor(c)
+                ? <img src={artFor(c)} alt="" style={{ width: 26, height: 26, objectFit: 'contain', marginInlineStart: -4 }} />
+                : <span style={{ width: 10, height: 10, borderRadius: 5, background: catColor(c) }} />}
               {c}
               {/* The count is the whole explanation for why the ✕ is missing, so it is
                   always shown rather than only on the locked ones. */}
               <span style={{ fontSize: 12, fontWeight: 700, color: C.dim }}>{used}</span>
+              <button onClick={() => setPicking(c)} title={ARABIC ? 'صورة الفئة' : 'Category image'} style={{
+                width: 24, height: 24, borderRadius: 12, border: 'none', background: 'rgba(255,255,255,.08)',
+                color: C.dim, cursor: 'pointer', fontSize: 12, lineHeight: 1, fontFamily: 'inherit',
+              }}>🖼</button>
               {used === 0 && (
                 <button onClick={() => remove(c)} title={ARABIC ? 'حذف' : 'Remove'} style={{
                   width: 24, height: 24, borderRadius: 12, border: 'none', background: 'rgba(255,255,255,.08)',
@@ -118,7 +139,124 @@ function Categories({ notify }) {
       <div style={{ color: C.dim, fontSize: 12 }}>{ARABIC
         ? 'يُحفظ تلقائياً · الرقم هو عدد المنتجات · لا يمكن حذف فئة تحتوي على منتجات'
         : 'Saves automatically · the number is the product count · a category with products cannot be deleted'}</div>
+      {picking && (
+        <CategoryImageModal cat={picking} notify={notify} onClose={() => setPicking(null)} />
+      )}
     </div>
+  );
+}
+
+// Pick, preview and save a category's tile artwork.
+//
+// The user never chooses a size or a format: whatever they pick is normalised in the
+// browser to the same 512x512 transparent PNG as the thirteen that ship with the app, with
+// the subject scaled to the same height. That is the only way a set of pictures from
+// thirteen different sources stays looking like a set.
+function CategoryImageModal({ cat, onClose, notify }) {
+  const [preview, setPreview] = useState(null);   // { dataUrl, hasTransparency, bytes }
+  const [busy, setBusy] = useState(false);
+  const fileRef = useRef(null);
+  const current = artFor(cat);
+  const uploaded = hasUpload(cat);
+
+  const pick = async (file) => {
+    if (!file) return;
+    setBusy(true);
+    try {
+      setPreview(await normalizeCategoryImage(file));
+    } catch (ex) {
+      const msg = {
+        not_an_image: ARABIC ? 'الملف ليس صورة' : 'That file is not an image',
+        source_too_large: ARABIC ? 'الصورة كبيرة جداً' : 'That image is too large',
+        blank: ARABIC ? 'الصورة فارغة' : 'That image is empty',
+      }[ex.message] || (ARABIC ? 'تعذّر قراءة الصورة' : 'Could not read that image');
+      notify(msg, 'red');
+    } finally { setBusy(false); }
+  };
+
+  const save = async () => {
+    if (!preview) return;
+    setBusy(true);
+    try {
+      await api.put(`/category-images/${encodeURIComponent(cat)}`, { data: preview.dataUrl });
+      await refreshCategoryArt(cat);
+      notify(ARABIC ? 'تم حفظ الصورة' : 'Image saved', 'green');
+      onClose();
+    } catch (ex) {
+      notify(ex.message === 'too_large' ? (ARABIC ? 'الصورة كبيرة جداً' : 'Image too large')
+        : (ARABIC ? 'فشل الحفظ' : 'Save failed'), 'red');
+    } finally { setBusy(false); }
+  };
+
+  const remove = async () => {
+    setBusy(true);
+    try {
+      await api.del(`/category-images/${encodeURIComponent(cat)}`);
+      await refreshCategoryArt(cat);
+      notify(ARABIC ? 'تمت إزالة الصورة' : 'Image removed', 'green');
+      onClose();
+    } catch (_) { notify(ARABIC ? 'فشل' : 'Failed', 'red'); } finally { setBusy(false); }
+  };
+
+  const shown = (preview && preview.dataUrl) || current;
+  return (
+    <Overlay onClose={onClose}>
+      <div style={{ ...S.card, width: 380, display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div style={{ fontWeight: 800, fontSize: 17 }}>🖼 {ARABIC ? 'صورة الفئة' : 'Category image'} — {cat}</div>
+
+        {/* Previewed on the same gradient the real tile uses, so a picture that will look
+            wrong there looks wrong here too. */}
+        <div style={{
+          height: 150, borderRadius: 12, border: `1px solid ${catColor(cat, 0.45)}`,
+          background: `linear-gradient(150deg, ${catColor(cat, 0.26)} 0%, ${C.panel2} 70%)`,
+          display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
+        }}>
+          {shown
+            ? <img src={shown} alt="" style={{ height: '100%', width: '100%', objectFit: 'contain', padding: 10, boxSizing: 'border-box' }} />
+            : <span style={{ color: C.dim, fontSize: 13 }}>{ARABIC ? 'لا توجد صورة' : 'No image yet'}</span>}
+        </div>
+
+        {/* The one thing the browser cannot do for them. A photo with its own background
+            becomes a rectangular block sitting on the card's gradient — say so before it is
+            saved rather than leaving them to wonder why their tile looks different. */}
+        {preview && !preview.hasTransparency && (
+          <div style={{ fontSize: 12, color: C.accent, lineHeight: 1.5 }}>
+            ⚠ {ARABIC
+              ? 'هذه الصورة بدون خلفية شفافة، لذا ستظهر ككتلة مستطيلة على البطاقة. الأفضل صورة PNG بخلفية شفافة.'
+              : 'This image has no transparent background, so it will show as a rectangular block on the tile. A cut-out PNG looks best.'}
+          </div>
+        )}
+        {preview && (
+          <div style={{ fontSize: 12, color: C.dim }}>
+            {ARABIC ? 'ستُحفظ بحجم' : 'Will be saved at'} 512×512 PNG · {Math.round(preview.bytes / 1024)} KB
+          </div>
+        )}
+
+        <input ref={fileRef} type="file" accept="image/*" style={{ display: 'none' }}
+          onChange={(e) => { pick(e.target.files && e.target.files[0]); e.target.value = ''; }} />
+
+        <button onClick={() => fileRef.current && fileRef.current.click()} disabled={busy}
+          style={{ ...S.btnGhost, padding: '13px', opacity: busy ? 0.6 : 1 }}>
+          {ARABIC ? '📁 اختر صورة' : '📁 Choose an image'}
+        </button>
+
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button onClick={save} disabled={busy || !preview}
+            style={{ ...S.btn, flex: 1, padding: '13px', opacity: busy || !preview ? 0.5 : 1 }}>
+            {ARABIC ? 'حفظ' : 'Save'}
+          </button>
+          <button onClick={onClose} style={{ ...S.btnGhost, padding: '13px' }}>{ARABIC ? 'إلغاء' : 'Cancel'}</button>
+        </div>
+
+        {/* Only offered when there is an upload to remove — removing it falls back to the
+            bundled artwork, or to the letter badge when the category has none. */}
+        {uploaded && (
+          <button onClick={remove} disabled={busy} style={{ ...S.btnGhost, padding: '11px', color: C.red }}>
+            {ARABIC ? '🗑 إزالة الصورة المرفوعة' : '🗑 Remove uploaded image'}
+          </button>
+        )}
+      </div>
+    </Overlay>
   );
 }
 

@@ -1,10 +1,22 @@
 // The two-step shelf browse (categories → items) used by both Sales and Inventory, so the
 // cashier learns one navigation model instead of two.
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { C, S } from '../theme';
 import { ARABIC } from '../client.config';
 import { catColor } from '../lib';
-import { categoryImage } from '../assets/categories';
+import { artFor, loadCategoryArt, artLoaded, subscribe } from '../categoryArt';
+
+// Re-render the shelf when a category's artwork arrives or is replaced. The lookup itself
+// lives in categoryArt.js — this hook only exists so React learns about it.
+function useCategoryArt() {
+  const [, bump] = useState(0);
+  useEffect(() => {
+    const off = subscribe(() => bump((n) => n + 1));
+    if (!artLoaded()) loadCategoryArt();
+    return off;
+  }, []);
+  return artFor;
+}
 
 const ALL_CAT = 'all';
 const NO_CAT = '';
@@ -24,12 +36,13 @@ function categoryCards(products) {
 const inCat = (p, cat) => (cat === ALL_CAT ? true : cat === NO_CAT ? !p.cat : p.cat === cat);
 
 function CategoryGrid({ cards, total, onPick, emptyHint }) {
+  const art = useCategoryArt();
   return (
     // 210px minimum, not 170: the tile now carries a photograph beside the name, and at
     // 170 the text column drops under what the longest category name needs.
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(210px, 1fr))', gap: 12, alignContent: 'start' }}>
       {cards.map((c) => {
-        const art = c.orphan ? null : categoryImage(c.name);
+        const tileArt = c.orphan ? null : art(c.name);
         return (
           // LABEL LEFT, ARTWORK RIGHT — as flex SIBLINGS, so they cannot overlap.
           //
@@ -54,7 +67,7 @@ function CategoryGrid({ cards, total, onPick, emptyHint }) {
             <span style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', justifyContent: 'space-between', gap: 8 }}>
               {/* No artwork is a supported state: the category list is user-editable, so new
                   categories WILL appear with none. Fall back to the coloured letter badge. */}
-              {art ? <span /> : (
+              {tileArt ? <span /> : (
                 <span style={{
                   width: 38, height: 38, borderRadius: 12, background: c.orphan ? C.line : catColor(c.name),
                   color: c.orphan ? C.dim : '#0f1117',
@@ -75,8 +88,8 @@ function CategoryGrid({ cards, total, onPick, emptyHint }) {
                 tile on a wide counter monitor but can never eat the name's column on a
                 narrow one. object-fit: contain keeps the whole bottle visible as the grid
                 reflows — `cover` would fill the slot but decapitate every one of them. */}
-            {art && (
-              <img src={art} alt="" aria-hidden="true" draggable="false" style={{
+            {tileArt && (
+              <img src={tileArt} alt="" aria-hidden="true" draggable="false" style={{
                 flex: '0 0 clamp(64px, 36%, 104px)', alignSelf: 'stretch', minWidth: 0,
                 marginInlineEnd: -6, marginBlock: -6,
                 objectFit: 'contain', objectPosition: 'center', pointerEvents: 'none',

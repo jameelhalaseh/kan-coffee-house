@@ -14,6 +14,7 @@ router.get('/invoice/next', requireSession, orders.invoiceNext);
 
 // Flat route groups — each declares its own full sub-paths, so they mount at the /api root.
 router.use('/', require('./products'));
+router.use('/', require('./categoryImages'));   // user-uploaded category tile artwork
 router.use('/', require('./suppliers'));
 router.use('/', require('./accounts'));
 router.use('/', require('./reports'));

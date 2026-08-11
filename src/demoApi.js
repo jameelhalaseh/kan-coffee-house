@@ -275,6 +275,10 @@ export const api = {
   put: (p, b) => handle('PUT', p, b || {}),
   patch: (p, b) => handle('PATCH', p, b || {}),
   del: (p) => handle('DELETE', p),
+  // The demo has no server to store uploaded artwork in, so every tile falls back to the
+  // bundled image. Rejecting (rather than omitting the method) is what categoryArt.js
+  // already treats as "no upload for this category".
+  getBlob: () => Promise.reject(new Error('not_found')),
   setToken, getToken, setOnSessionExpired,
 };
 export default api;

@@ -46,8 +46,28 @@ async function req(method, path, body) {
   return data;
 }
 
+// Binary GET. Category artwork is served from an AUTHENTICATED endpoint, and an <img> tag
+// cannot carry an Authorization header — so the bytes are fetched here and the caller turns
+// them into an object URL. Shares the 401-session handling above; everything else about it
+// is deliberately minimal, because it is the only non-JSON response in the API.
+async function getBlob(path) {
+  const res = await fetch(BASE + '/api' + path, {
+    headers: { ...(_token ? { Authorization: 'Bearer ' + _token } : {}) },
+  });
+  if (!res.ok) {
+    if (res.status === 401 && _token && _onExpired) {
+      try { _onExpired(); } catch (_) { /* never let the handler mask the original error */ }
+    }
+    const err = new Error('http_' + res.status);
+    err.status = res.status;
+    throw err;
+  }
+  return res.blob();
+}
+
 const realApi = {
   get: (p) => req('GET', p),
+  getBlob,
   post: (p, b) => req('POST', p, b),
   put: (p, b) => req('PUT', p, b),
   patch: (p, b) => req('PATCH', p, b),

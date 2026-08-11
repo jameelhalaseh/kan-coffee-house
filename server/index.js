@@ -33,7 +33,12 @@ app.use(helmet({
       'default-src': ["'self'"],
       'script-src': ["'self'"],
       'style-src': ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
-      'img-src': ["'self'", 'data:', 'https:'],
+      // blob: is required, not cosmetic. Category artwork is served from an AUTHENTICATED
+      // endpoint, and an <img> tag cannot carry an Authorization header — so the bytes are
+      // fetched with the Bearer token and turned into an object URL. Without blob: here the
+      // browser refuses every one of those images and the shelf silently falls back to
+      // letter badges. The same applies to the upload preview, which reads a local file.
+      'img-src': ["'self'", 'data:', 'blob:', 'https:'],
       'font-src': ["'self'", 'data:', 'https://fonts.gstatic.com'],
       // localhost/127.0.0.1 allowed so the page can reach the local print bridge (Dealer).
       'connect-src': ["'self'", 'https://*.sentry.io', 'https://*.ingest.sentry.io', 'http://localhost:*', 'http://127.0.0.1:*'],
@@ -142,6 +147,16 @@ app.use('/api', (_req, res) => res.status(404).json({ error: 'not_found' }));
 // The response stays a bare { error: 'server' }; the stack goes to the log and, if a
 // webhook is configured, to whoever is on call.
 app.use((err, req, res, _next) => {
+  // An over-sized body is rejected by express.json BEFORE any route sees it. That is the
+  // caller's problem, not a server fault: reporting it as 500 both misleads the client and
+  // pages the on-call channel for someone uploading a large picture.
+  if (err && (err.type === 'entity.too.large' || err.status === 413)) {
+    return res.status(413).json({ error: 'too_large' });
+  }
+  // Malformed JSON is likewise a 400, not a crash.
+  if (err && err.type === 'entity.parse.failed') {
+    return res.status(400).json({ error: 'invalid' });
+  }
   const fields = {
     req: req.id,
     route: req.originalUrl ? req.originalUrl.split('?')[0] : null,
