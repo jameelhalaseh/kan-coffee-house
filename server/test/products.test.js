@@ -316,6 +316,99 @@ describe('category settings', () => {
     expect((await put(cashierToken, JSON.stringify(['Hacked']))).status).toBe(403);
   });
 
+  test('rejects a value that is not a JSON array of strings', async () => {
+    // The column is TEXT holding JSON. A malformed blob used to store fine and then break
+    // every client that read it.
+    for (const bad of ['not json', JSON.stringify({ a: 1 }), JSON.stringify([1, 2]), JSON.stringify('x')]) {
+      expect((await put(adminToken, bad)).status).toBe(400);
+    }
+  });
+
+  // A category that still has products cannot be removed. The list is saved as one blob, so
+  // a delete is a save with an entry missing — which used to be accepted silently, dropping
+  // a shelf from the list while its products kept pointing at it.
+  describe('a category in use cannot be deleted', () => {
+    test('refuses the removal and changes nothing', async () => {
+      await put(adminToken, JSON.stringify(['Whiskey', 'Gin']));
+      await makeProduct({ name: 'Jameson', cat: 'Whiskey' });
+
+      const res = await put(adminToken, JSON.stringify(['Gin']));
+      expect(res.status).toBe(409);
+      expect(res.body.error).toBe('category_in_use');
+      expect(res.body.categories).toEqual([{ cat: 'Whiskey', products: 1 }]);
+
+      // The stored list is untouched — a rejected save must not half-apply.
+      expect(JSON.parse((await get(adminToken)).body.value)).toEqual(['Whiskey', 'Gin']);
+    });
+
+    test('names every blocked category with its product count', async () => {
+      await put(adminToken, JSON.stringify(['Whiskey', 'Gin', 'Rum']));
+      await makeProduct({ name: 'A', cat: 'Whiskey' });
+      await makeProduct({ name: 'B', cat: 'Whiskey' });
+      await makeProduct({ name: 'C', cat: 'Rum' });
+
+      const res = await put(adminToken, JSON.stringify(['Gin']));
+      expect(res.status).toBe(409);
+      expect(res.body.categories).toEqual([
+        { cat: 'Rum', products: 1 },
+        { cat: 'Whiskey', products: 2 },
+      ]);
+    });
+
+    test('allows the delete once the category is empty', async () => {
+      await put(adminToken, JSON.stringify(['Whiskey', 'Gin']));
+      const p = await makeProduct({ name: 'Last Bottle', cat: 'Whiskey' });
+      expect((await put(adminToken, JSON.stringify(['Gin']))).status).toBe(409);
+
+      await request(app).delete(`/api/products/${p.id}`).set(...auth(adminToken));
+      expect((await put(adminToken, JSON.stringify(['Gin']))).status).toBe(200);
+      expect(JSON.parse((await get(adminToken)).body.value)).toEqual(['Gin']);
+    });
+
+    test('reassigning the products also frees the category', async () => {
+      await put(adminToken, JSON.stringify(['Whiskey', 'Gin']));
+      const p = await makeProduct({ name: 'Moved', cat: 'Whiskey' });
+      await request(app).put(`/api/products/${p.id}`).set(...auth(adminToken))
+        .send({ name: 'Moved', cat: 'Gin', price: 1, cost: 0, stock: 0 });
+
+      expect((await put(adminToken, JSON.stringify(['Gin']))).status).toBe(200);
+    });
+
+    test('an INACTIVE product still holds its category', async () => {
+      // It can be switched back on, and it is still listed in Inventory.
+      await put(adminToken, JSON.stringify(['Whiskey']));
+      const p = await makeProduct({ name: 'Discontinued', cat: 'Whiskey' });
+      await request(app).put(`/api/products/${p.id}`).set(...auth(adminToken))
+        .send({ name: 'Discontinued', cat: 'Whiskey', price: 1, cost: 0, stock: 0, active: false });
+
+      expect((await put(adminToken, JSON.stringify([]))).status).toBe(409);
+    });
+
+    test('adding and reordering are unaffected', async () => {
+      await put(adminToken, JSON.stringify(['Whiskey']));
+      await makeProduct({ name: 'Jameson', cat: 'Whiskey' });
+
+      expect((await put(adminToken, JSON.stringify(['Whiskey', 'Vodka']))).status).toBe(200);
+      expect((await put(adminToken, JSON.stringify(['Vodka', 'Whiskey']))).status).toBe(200);
+    });
+
+    test('a list entry no product matches exactly is still removable', async () => {
+      // Grouping everywhere else is `p.cat === c`, so 'whiskey' and 'Whiskey' are different
+      // shelves. Dropping a list entry nothing references orphans nothing.
+      await put(adminToken, JSON.stringify(['Whiskey', 'Gin']));
+      await makeProduct({ name: 'Odd case', cat: 'whiskey' });
+      expect((await put(adminToken, JSON.stringify(['Gin']))).status).toBe(200);
+    });
+
+    test('a category used by products but missing from the list does not block saving', async () => {
+      // This drift exists in the live database (products in 'Accessories', no list entry).
+      // It must not wedge the whole Settings screen.
+      await put(adminToken, JSON.stringify(['Whiskey']));
+      await makeProduct({ name: 'Corkscrew', cat: 'Accessories' });
+      expect((await put(adminToken, JSON.stringify(['Whiskey', 'Vodka']))).status).toBe(200);
+    });
+  });
+
   test('reading requires a session', async () => {
     expect((await request(app).get('/api/settings/categories')).status).toBe(401);
   });

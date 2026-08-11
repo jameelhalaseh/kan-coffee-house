@@ -29,17 +29,33 @@ function SettingsView({ user, isAdmin, notify }) {
 
 function Categories({ notify }) {
   const [cats, setCats] = useState([]);
+  const [counts, setCounts] = useState({});   // category name → how many products use it
   const [input, setInput] = useState('');
   useEffect(() => {
     api.get('/settings/categories').then((r) => {
       try { setCats(r && r.value ? JSON.parse(r.value) : []); } catch (_) { setCats([]); }
     }).catch(() => {});
+    // Product counts drive whether a category can be removed at all. Exact-match keys,
+    // mirroring how the shelves group everywhere else in the app.
+    api.get('/products').then((rows) => {
+      const m = {};
+      (rows || []).forEach((p) => { if (p.cat) m[p.cat] = (m[p.cat] || 0) + 1; });
+      setCounts(m);
+    }).catch(() => {});
   }, []);
 
   const persist = async (list) => {
+    const before = cats;
     setCats(list);
     try { await api.put('/settings/categories', { value: JSON.stringify(list) }); }
-    catch (_) { notify(ARABIC ? 'فشل الحفظ' : 'Save failed', 'red'); }
+    catch (ex) {
+      // The server is the authority on this rule; roll the optimistic update back rather
+      // than leave the screen showing a change that was refused.
+      setCats(before);
+      notify(ex.message === 'category_in_use'
+        ? (ARABIC ? 'لا يمكن حذف فئة تحتوي على منتجات' : 'A category with products cannot be deleted')
+        : (ARABIC ? 'فشل الحفظ' : 'Save failed'), 'red');
+    }
   };
   const add = () => {
     const name = input.trim();
@@ -47,7 +63,13 @@ function Categories({ notify }) {
     if (cats.some((c) => c.toLowerCase() === name.toLowerCase())) { notify(ARABIC ? 'الفئة موجودة' : 'Category exists', 'red'); return; }
     persist([...cats, name]); setInput('');
   };
+  // Only an EMPTY category can be removed. The ✕ is not rendered at all on one that is in
+  // use — a disabled-looking button still invites the click, and the person this guards
+  // against is the one not reading the dialog. Emptying the shelf (reassign or delete its
+  // products in Inventory) is the deliberate path, and then the ✕ appears on its own.
   const remove = (name) => {
+    const n = counts[name] || 0;
+    if (n > 0) return;
     if (!window.confirm((ARABIC ? 'حذف الفئة ' : 'Remove category ') + name + '?')) return;
     persist(cats.filter((c) => c !== name));
   };
@@ -58,19 +80,33 @@ function Categories({ notify }) {
     <div style={{ ...S.card, padding: 22, display: 'flex', flexDirection: 'column', gap: 14 }}>
       <div style={{ fontWeight: 800, fontSize: 16 }}>🏷 {ARABIC ? 'فئات المنتجات' : 'Product categories'}</div>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-        {cats.map((c) => (
-          <span key={c} className="rise" style={{
-            display: 'inline-flex', alignItems: 'center', gap: 8, padding: '9px 8px 9px 14px',
-            background: catColor(c, 0.14), border: `1px solid ${catColor(c, 0.55)}`, borderRadius: 20, fontSize: 14, fontWeight: 700,
-          }}>
-            <span style={{ width: 10, height: 10, borderRadius: 5, background: catColor(c) }} />
-            {c}
-            <button onClick={() => remove(c)} title={ARABIC ? 'حذف' : 'Remove'} style={{
-              width: 24, height: 24, borderRadius: 12, border: 'none', background: 'rgba(255,255,255,.08)',
-              color: C.dim, cursor: 'pointer', fontSize: 13, lineHeight: 1, fontFamily: 'inherit',
-            }}>✕</button>
-          </span>
-        ))}
+        {cats.map((c) => {
+          const used = counts[c] || 0;
+          return (
+            <span key={c} className="rise" title={used
+              ? (ARABIC
+                ? `${used} منتج في هذه الفئة — انقل أو احذف المنتجات أولاً لحذف الفئة`
+                : `${used} product${used === 1 ? '' : 's'} in this category — move or delete them first to remove it`)
+              : (ARABIC ? 'فئة فارغة' : 'Empty category')}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 8,
+                padding: used ? '9px 14px' : '9px 8px 9px 14px',
+                background: catColor(c, 0.14), border: `1px solid ${catColor(c, 0.55)}`, borderRadius: 20, fontSize: 14, fontWeight: 700,
+              }}>
+              <span style={{ width: 10, height: 10, borderRadius: 5, background: catColor(c) }} />
+              {c}
+              {/* The count is the whole explanation for why the ✕ is missing, so it is
+                  always shown rather than only on the locked ones. */}
+              <span style={{ fontSize: 12, fontWeight: 700, color: C.dim }}>{used}</span>
+              {used === 0 && (
+                <button onClick={() => remove(c)} title={ARABIC ? 'حذف' : 'Remove'} style={{
+                  width: 24, height: 24, borderRadius: 12, border: 'none', background: 'rgba(255,255,255,.08)',
+                  color: C.dim, cursor: 'pointer', fontSize: 13, lineHeight: 1, fontFamily: 'inherit',
+                }}>✕</button>
+              )}
+            </span>
+          );
+        })}
         {!cats.length && <span style={{ color: C.dim, fontSize: 13 }}>{ARABIC ? 'لا فئات بعد — أضف أول فئة' : 'No categories yet — add the first one'}</span>}
       </div>
       <div style={{ display: 'flex', gap: 8 }}>
@@ -79,7 +115,9 @@ function Categories({ notify }) {
           placeholder={ARABIC ? 'اسم فئة جديدة…' : 'New category name…'} />
         <button onClick={add} style={{ ...S.btn, padding: '10px 22px' }}>＋ {ARABIC ? 'إضافة' : 'Add'}</button>
       </div>
-      <div style={{ color: C.dim, fontSize: 12 }}>{ARABIC ? 'يُحفظ تلقائياً · لون الفئة يظهر على بطاقات المنتجات' : 'Saves automatically · the color follows the category onto product tiles'}</div>
+      <div style={{ color: C.dim, fontSize: 12 }}>{ARABIC
+        ? 'يُحفظ تلقائياً · الرقم هو عدد المنتجات · لا يمكن حذف فئة تحتوي على منتجات'
+        : 'Saves automatically · the number is the product count · a category with products cannot be deleted'}</div>
     </div>
   );
 }

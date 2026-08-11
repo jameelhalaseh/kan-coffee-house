@@ -326,16 +326,71 @@ router.get('/settings/categories', requireSession, async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+//
+// A CATEGORY THAT STILL HAS PRODUCTS CANNOT BE REMOVED.
+//
+// This route takes the whole list as one blob, so a "delete" is just a save with one entry
+// missing — previously accepted without question. One stray click in Settings (and the till
+// is often left logged in as the owner) silently dropped a shelf from the list while its
+// products kept pointing at it, and nothing anywhere said which one had gone.
+//
+// So the rule is enforced here rather than in a confirm dialog: dialogs are dismissed by
+// exactly the distracted person this is protecting against, and the UI is not the only way
+// to reach this endpoint. Empty a category — reassign or delete its products — and it
+// deletes fine. Adding, reordering and renaming-by-adding are all untouched.
+//
+// The comparison is exact-match, deliberately: grouping everywhere else in the app is
+// `p.cat === c`, so a list entry no product matches character-for-character is orphaning
+// nothing and is safe to drop.
 router.put('/settings/categories', requireSession, requireAdmin, async (req, res, next) => {
+  const value = (req.body || {}).value;
+
+  // Parse before writing. The column is TEXT holding JSON, so a malformed blob would other-
+  // wise be stored happily and blow up in every client that reads it.
+  let incoming;
+  try { incoming = JSON.parse(value); } catch (_) { return fail(res, 'invalid', 400); }
+  if (!Array.isArray(incoming) || !incoming.every((c) => typeof c === 'string')) {
+    return fail(res, 'invalid', 400);
+  }
+
+  const client = await db.pool.connect();
   try {
-    const value = (req.body || {}).value;
-    await db.query(
+    await client.query('begin');
+    // Lock the row so two admins saving at once can't each read a pre-image in which their
+    // own removal looks safe.
+    const { rows: prevRows } = await client.query(
+      "select value from app_settings where key = 'categories' for update"
+    );
+    let previous = [];
+    try { previous = JSON.parse(prevRows[0] && prevRows[0].value) || []; } catch (_) { previous = []; }
+    if (!Array.isArray(previous)) previous = [];
+
+    const removed = previous.filter((c) => typeof c === 'string' && !incoming.includes(c));
+    if (removed.length) {
+      const { rows: inUse } = await client.query(
+        'select cat, count(*)::int as products from products where cat = any($1) group by cat order by cat',
+        [removed]
+      );
+      // Inactive products count too: they still carry the category and can be switched back on.
+      if (inUse.length) {
+        await client.query('rollback');
+        return res.status(409).json({ error: 'category_in_use', categories: inUse });
+      }
+    }
+
+    await client.query(
       `insert into app_settings (key, value) values ('categories', $1)
        on conflict (key) do update set value = excluded.value`,
-      [value ?? null]
+      [value]
     );
+    await client.query('commit');
     res.json({ ok: true });
-  } catch (e) { dbError(res, next, e); }
+  } catch (e) {
+    try { await client.query('rollback'); } catch (_) { /* connection already dead */ }
+    dbError(res, next, e);
+  } finally {
+    client.release();
+  }
 });
 
 module.exports = router;
