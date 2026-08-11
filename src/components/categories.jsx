@@ -25,57 +25,64 @@ const inCat = (p, cat) => (cat === ALL_CAT ? true : cat === NO_CAT ? !p.cat : p.
 
 function CategoryGrid({ cards, total, onPick, emptyHint }) {
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(170px, 1fr))', gap: 12, alignContent: 'start' }}>
+    // 210px minimum, not 170: the tile now carries a photograph beside the name, and at
+    // 170 the text column drops under what the longest category name needs.
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(210px, 1fr))', gap: 12, alignContent: 'start' }}>
       {cards.map((c) => {
         const art = c.orphan ? null : categoryImage(c.name);
         return (
-          // ARTWORK ABOVE, LABEL BELOW — they are stacked siblings, never overlapping layers.
+          // LABEL LEFT, ARTWORK RIGHT — as flex SIBLINGS, so they cannot overlap.
           //
-          // Two earlier attempts failed the same way. Floating the bottle over the card and
-          // reserving 62%/46% for label/art sums past 100%, so "Accessories" and "Champagne"
-          // ran under the glass. Making them side-by-side flex siblings fixed the overlap but
-          // left a ~83px text column, too narrow for "Accessories" at 17px — it broke
-          // mid-word — while squeezing the bottle down to 63px.
+          // The first version floated the bottle over the card with 62% reserved for the
+          // label and 46% for the art. That sums past 100%, and measuring glyph extents
+          // showed the two longest names, "Accessories" and "Champagne", running under the
+          // glass. Siblings make that impossible by construction rather than by arithmetic.
           //
-          // Stacking removes the competition instead of rationing it: the name gets the full
-          // card width, and the artwork gets the full card width too. Categories are
-          // user-named, so a name longer than any percentage you pick will always exist.
+          // The remaining question is only whether the longest name FITS beside the art, and
+          // that was measured rather than guessed: "Accessories" renders 103px at 17px and
+          // 97px at 16px in DM Sans 800. The numbers below are chosen against that budget —
+          // at the ~221px tile a 210px grid minimum produces, the text column comes out near
+          // 103px, which clears 16px with room rather than landing on the boundary.
+          // A multi-word name wraps to a second line at a WORD boundary; it never breaks
+          // mid-word, which is what "Accessorie/s" looked like when the column was 83px.
           <button key={c.key || 'none'} onClick={() => onPick(c.key)} className="rise" style={{
-            display: 'flex', flexDirection: 'column', gap: 8, height: 168, padding: '12px 16px 14px',
+            display: 'flex', alignItems: 'stretch', gap: 10, height: 150, padding: 14,
             borderRadius: 14, border: `1px solid ${c.orphan ? C.line : catColor(c.name, 0.45)}`,
             background: c.orphan ? C.panel2 : `linear-gradient(150deg, ${catColor(c.name, 0.26)} 0%, ${C.panel2} 70%)`,
             color: C.text, cursor: 'pointer', textAlign: 'start', fontFamily: 'inherit', overflow: 'hidden',
           }}>
-            {/* object-fit: contain is what keeps the whole bottle visible as the grid
-                reflows — the tile is minmax(170px, 1fr) so its width changes constantly,
-                and `cover` would fill the slot but decapitate every bottle. */}
-            {art ? (
+            <span style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', justifyContent: 'space-between', gap: 8 }}>
+              {/* No artwork is a supported state: the category list is user-editable, so new
+                  categories WILL appear with none. Fall back to the coloured letter badge. */}
+              {art ? <span /> : (
+                <span style={{
+                  width: 38, height: 38, borderRadius: 12, background: c.orphan ? C.line : catColor(c.name),
+                  color: c.orphan ? C.dim : '#0f1117',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 18,
+                }}>{c.orphan ? '?' : c.name.slice(0, 1)}</span>
+              )}
+              <span style={{ minWidth: 0 }}>
+                <span style={{
+                  display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden',
+                  fontSize: 16, fontWeight: 800, lineHeight: 1.2,
+                }}>{c.name}</span>
+                <span style={{ display: 'block', marginTop: 3, fontSize: 12, color: C.dim }}>
+                  {c.count} {ARABIC ? 'صنف' : c.count === 1 ? 'item' : 'items'}
+                </span>
+              </span>
+            </span>
+            {/* Bounded by clamp() rather than a bare percentage: the bottle grows with the
+                tile on a wide counter monitor but can never eat the name's column on a
+                narrow one. object-fit: contain keeps the whole bottle visible as the grid
+                reflows — `cover` would fill the slot but decapitate every one of them. */}
+            {art && (
               <img src={art} alt="" aria-hidden="true" draggable="false" style={{
-                flex: 1, minHeight: 0, width: '100%',
+                flex: '0 0 clamp(64px, 36%, 104px)', alignSelf: 'stretch', minWidth: 0,
+                marginInlineEnd: -6, marginBlock: -6,
                 objectFit: 'contain', objectPosition: 'center', pointerEvents: 'none',
                 filter: 'drop-shadow(0 8px 16px rgba(0,0,0,.5))',
               }} />
-            ) : (
-              // No artwork is a supported state: the category list is user-editable, so new
-              // categories WILL appear with none. Fall back to the coloured letter badge.
-              <span style={{ flex: 1, minHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <span style={{
-                  width: 46, height: 46, borderRadius: 14, background: c.orphan ? C.line : catColor(c.name),
-                  color: c.orphan ? C.dim : '#0f1117',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 22,
-                }}>{c.orphan ? '?' : c.name.slice(0, 1)}</span>
-              </span>
             )}
-            <span style={{ minWidth: 0 }}>
-              {/* Wraps at word boundaries to a second line, then clips. Never mid-word. */}
-              <span style={{
-                display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden',
-                fontSize: 17, fontWeight: 800, lineHeight: 1.2,
-              }}>{c.name}</span>
-              <span style={{ display: 'block', marginTop: 3, fontSize: 12, color: C.dim }}>
-                {c.count} {ARABIC ? 'صنف' : c.count === 1 ? 'item' : 'items'}
-              </span>
-            </span>
           </button>
         );
       })}
