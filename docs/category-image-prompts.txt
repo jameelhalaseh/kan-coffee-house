@@ -1,0 +1,233 @@
+================================================================================
+CATEGORY TILE ARTWORK — IMAGE GENERATION PROMPTS
+Liquor Store POS  ·  13 categories  ·  generated 2026-08-11
+================================================================================
+
+Paste these into any image generator (Midjourney, DALL·E, Firefly, Flux, SDXL).
+Every prompt is written to produce ONE consistent set: same lighting, same camera,
+same background, same framing. Consistency matters more than any single image —
+these are seen twelve-at-once in a grid, so one odd angle or one brighter
+background is immediately obvious.
+
+
+--------------------------------------------------------------------------------
+1. SIZE AND FORMAT
+--------------------------------------------------------------------------------
+
+  Generate at:   1024 × 1024 px, square (1:1)
+  Ship at:       512 × 512 px PNG
+  Transparency:  PNG with alpha (see section 3)
+
+WHY SQUARE, AND WHY THOSE NUMBERS
+
+The tile is a CSS grid cell: `minmax(170px, 1fr)` wide by 132px tall, so its
+width changes with the window — roughly 170px on a small screen, up to ~300px on
+a 1920px counter monitor. The image must therefore never depend on a fixed
+aspect ratio.
+
+A square source displayed with `object-fit: contain` always shows the whole
+subject whatever the tile does. Nothing is ever cropped, at any window size —
+which is the requirement. (`cover` would fill the tile edge-to-edge but slices
+the top and bottom off a tall bottle. Do not use it here.)
+
+512px shipped is 2× the largest realistic on-screen size (~256px), so it stays
+sharp on a HiDPI screen without paying for pixels nobody sees. Generating at
+1024 first gives room to re-crop or re-scale later without regenerating.
+
+SAFE AREA — the single most important instruction
+
+Keep the subject inside the middle 80% of the frame, with ~10% empty margin on
+every side. Generators love to crop a bottle hard against the top edge; when the
+tile is short and wide, `contain` shrinks the image to fit its height and an
+edge-touching subject looks cramped and misaligned against its neighbours. The
+margin is what makes thirteen separately-generated images read as one set.
+
+Every prompt below already contains this instruction. Do not remove it.
+
+
+--------------------------------------------------------------------------------
+2. THE STYLE PREAMBLE  (identical on every prompt — do not vary)
+--------------------------------------------------------------------------------
+
+  Professional product photograph, single centred subject, shot straight on at
+  eye level, symmetrical composition. Soft diffused studio lighting from the
+  upper left with a gentle rim light on the right edge. Deep matte charcoal
+  background, colour #0F1117, seamless and unlit, no visible horizon or surface
+  edge. Subtle warm amber highlight (#F0A830) catching the glass. Rich, moody,
+  premium spirits-retail look. Subject occupies the middle 80% of the frame with
+  clear empty margin on all four sides. Sharp focus, fine detail, no motion blur.
+  Square 1:1 composition.
+
+  --ar 1:1 --style raw          (Midjourney users: append this)
+
+NEGATIVE PROMPT (paste into the negative field, or append for MJ as --no ...)
+
+  text, letters, words, logos, brand names, labels with readable writing,
+  watermark, signature, people, hands, faces, cluttered background, props,
+  tabletop, wooden surface, bar counter, multiple subjects, collage, frame,
+  border, drop shadow on background, white background, bright background,
+  cropped subject, subject touching edge of frame, tilted angle, fisheye
+
+READABLE BRAND NAMES: leave them out deliberately. A generated label is usually a
+mangled imitation of a real brand — which is both an obvious visual defect and
+somebody else's trademark on your client's screen. Blank or embossed labels look
+more premium anyway.
+
+
+--------------------------------------------------------------------------------
+3. BACKGROUND — TRANSPARENT vs SOLID
+--------------------------------------------------------------------------------
+
+The prompts specify a solid #0F1117 background, which matches the app's page
+background exactly and is the safe default.
+
+BUT the recommended final asset is TRANSPARENT (cut the background out after
+generating — any background remover, or generate on a flat colour and key it).
+
+Reason: the tile is not flat. Each card is a gradient running from its own
+category accent colour at 26% opacity down to #22252F at 70%:
+
+    linear-gradient(150deg, <catColor 0.26> 0%, #22252F 70%)
+
+A flat #0F1117 image square sitting on that gradient shows a visible rectangular
+seam — a darker box floating on a lighter, tinted card. Transparent artwork sits
+directly on the gradient and always matches, on every category, and keeps
+matching if the theme is ever retuned.
+
+If you would rather not cut out the background, use #1A1C25 (the panel colour)
+rather than #0F1117 — it sits closer to the middle of the gradient and the seam
+is far less obvious.
+
+
+--------------------------------------------------------------------------------
+4. THE THIRTEEN PROMPTS
+--------------------------------------------------------------------------------
+
+Each is: [STYLE PREAMBLE] + the subject line below.
+Generate all thirteen in one session/seed family if your tool supports it.
+
+--- WHISKEY -------------------------------------------------------------------
+A single tall amber whisky bottle with an unlabelled dark glass body and a short
+neck, beside a heavy cut-crystal tumbler holding two fingers of golden-amber
+whisky over one large clear ice cube. Warm honey and copper tones.
+
+--- VODKA ---------------------------------------------------------------------
+A single tall clear glass vodka bottle, frosted and beaded with condensation,
+completely colourless spirit inside, with a slim silver cap. Cool blue-white
+highlights, icy and crystalline.
+
+--- GIN -----------------------------------------------------------------------
+A single squat clear gin bottle with a heavy glass base and a cork stopper, with
+two juniper berries and a sprig of botanicals resting beside its foot. Cool
+green-blue glass tones, botanical and herbal.
+
+--- RUM -----------------------------------------------------------------------
+A single dark rum bottle in deep mahogany glass with rounded shoulders and a
+cork stopper. Warm reddish-brown and molasses tones, tropical and rich.
+
+--- TEQUILA -------------------------------------------------------------------
+A single slender clear tequila bottle with a long neck and a wooden stopper,
+beside a narrow shot glass. Pale straw-gold spirit, warm desert tones.
+
+--- BRANDY --------------------------------------------------------------------
+A single rounded brandy bottle in dark glass, beside a wide-bowled brandy snifter
+holding a small measure of deep amber spirit. Warm chestnut and burnt-orange
+tones.
+
+--- ARAK ----------------------------------------------------------------------
+A single tall slim clear glass bottle of arak with a plain white cap, beside a
+small straight glass holding arak clouded milky-white with water. Clean white
+and pale grey tones, anise, understated and traditional Levantine.
+
+--- LIQUEUR -------------------------------------------------------------------
+A single short ornate liqueur bottle in deep emerald-green glass with a rounded
+stopper, catching the light through the coloured glass. Jewel-toned green and
+violet highlights, sweet and decorative.
+
+--- WINE ----------------------------------------------------------------------
+A single dark green wine bottle with a punted base and foil capsule, beside a
+long-stemmed wine glass holding a small pour of deep ruby red wine. Burgundy and
+forest-green tones.
+
+--- BEER ----------------------------------------------------------------------
+A single brown glass beer bottle with a crown cap, beside a tall pilsner glass of
+golden lager with a thick white foam head and rising bubbles. Warm gold and amber
+tones, fresh and cold.
+
+--- CHAMPAGNE -----------------------------------------------------------------
+A single champagne bottle with a foil-wrapped neck and wire cage, beside a tall
+champagne flute of pale gold sparkling wine with a fine stream of bubbles rising.
+Pale gold and platinum tones, celebratory and elegant.
+
+--- MIXERS --------------------------------------------------------------------
+A single tall clear glass bottle of sparkling tonic water with a slim neck,
+beside a highball glass of clear fizzing mixer with ice cubes and a fresh lime
+wedge. Cool clear tones with a bright citrus-green accent, crisp and effervescent.
+
+--- ACCESSORIES ---------------------------------------------------------------
+A neat arrangement of bar accessories: a stainless steel waiter's corkscrew, a
+polished bottle opener and a single empty whisky glass, grouped together as one
+compact centred cluster. Brushed steel and cool grey tones, clean and utilitarian.
+
+NOTE: Accessories currently has 4 products in the live database but is NOT in the
+saved category list — see the open drift item. Generate the image anyway; the
+tile already appears on the Sales screen because tiles are built from products.
+
+
+--------------------------------------------------------------------------------
+5. FILE NAMING
+--------------------------------------------------------------------------------
+
+Name each file with the lowercased category, so the code can resolve it from the
+category string with no lookup table to keep in sync:
+
+  whiskey.png   vodka.png     gin.png        rum.png       tequila.png
+  brandy.png    arak.png      liqueur.png    wine.png      beer.png
+  champagne.png mixers.png    accessories.png
+
+Put them in:  src/assets/categories/
+
+A category with no matching file must fall back to the existing coloured letter
+badge rather than showing a broken image — the category list is user-editable, so
+new categories WILL appear with no artwork. That fallback is required, not
+optional.
+
+
+--------------------------------------------------------------------------------
+6. ONE THING TO DECIDE BEFORE GENERATING
+--------------------------------------------------------------------------------
+
+The tile accent colours are NOT drink colours. They are generated by hashing the
+category name (`catHue` in src/lib.js), so today they land like this:
+
+    Whiskey      #51D67E   green
+    Vodka        #D651A8   pink
+    Gin          #D651B3   pink
+    Rum          #82D651   lime
+    Tequila      #51CBD6   cyan
+    Brandy       #5182D6   blue
+    Arak         #D651A3   pink
+    Liqueur      #61D651   green
+    Wine         #51BAD6   cyan
+    Beer         #63D651   green
+    Champagne    #D6D651   yellow
+    Mixers       #5651D6   indigo
+    Accessories  #51D651   green
+
+Green whiskey, cyan wine, pink gin. It is stable and it guarantees every category
+gets a distinct colour with no configuration — but once there is real photography
+on the tile, a green wash behind an amber whisky bottle will look wrong.
+
+Two ways to go, and it is worth choosing BEFORE generating 13 images:
+
+  (a) Keep the hashed colours. Then generate the artwork on transparent
+      background and keep the subject fairly neutral, so the tile tint reads as
+      decoration rather than as a claim about the drink.
+
+  (b) Replace the hash with a fixed per-category palette keyed to the real drink
+      (whiskey amber, wine burgundy, beer gold, vodka ice-blue …), falling back
+      to the hash for any category not in the table. The tile tint then reinforces
+      the photograph instead of fighting it. This is a small change to
+      src/lib.js and is what I would recommend if you are adding photography.
+
+================================================================================
