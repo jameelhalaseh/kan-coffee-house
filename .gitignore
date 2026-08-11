@@ -19,3 +19,8 @@ coverage/
 npm-debug.log*
 .DS_Store
 Thumbs.db
+
+# Raw generated artwork drop-off. The shipped assets are the processed 512x512 PNGs in
+# src/assets/categories/ (~450KB total); these originals are ~20MB and only needed to
+# re-process at a different size. Keep them locally, out of git history.
+images/
