@@ -41,6 +41,10 @@ function SalesView({ user, notify }) {
   const [newProduct, setNewProduct] = useState(null); // {barcode} → modal
   const [editLine, setEditLine] = useState(null);      // cart line → qty/price keypad
   const [quickItem, setQuickItem] = useState(false);   // open-price misc item modal
+  const [pickDiscount, setPickDiscount] = useState(false);   // 🏷 Discount → which line?
+  // Which tab the line editor opens on. Coming from the 🏷 button it opens on Discount;
+  // tapping the line itself still opens on Qty, which is what that tap has always meant.
+  const [editField, setEditField] = useState('qty');
   const [weighItem, setWeighItem] = useState(null);    // kg product → weight keypad
   const [busy, setBusy] = useState(false);
   const [held, setHeld] = useState(() => { try { return JSON.parse(localStorage.getItem(HELD_KEY)) || []; } catch (_) { return []; } });
@@ -105,7 +109,7 @@ function SalesView({ user, notify }) {
   const onScanRef = useRef(null);
   onScanRef.current = onScan;
   const modalOpenRef = useRef(false);
-  modalOpenRef.current = !!(newProduct || editLine || quickItem || weighItem || showHeld || receipt);
+  modalOpenRef.current = !!(newProduct || editLine || quickItem || weighItem || showHeld || receipt || pickDiscount);
   useEffect(() => {
     let buf = '';
     let lastTs = 0;
@@ -395,7 +399,7 @@ function SalesView({ user, notify }) {
               targets instead of four controls squeezed against a truncated name. */}
           {cart.map((l) => (
             <div key={l.id} className="rise" style={{ padding: '10px 0', borderBottom: `1px dashed ${C.line}` }}>
-              <button onClick={() => setEditLine(l)} style={{ width: '100%', display: 'flex', alignItems: 'baseline', gap: 10, background: 'none', border: 'none', textAlign: 'start', cursor: 'pointer', color: C.text, fontFamily: 'inherit', padding: 0 }}>
+              <button onClick={() => { setEditField('qty'); setEditLine(l); }} style={{ width: '100%', display: 'flex', alignItems: 'baseline', gap: 10, background: 'none', border: 'none', textAlign: 'start', cursor: 'pointer', color: C.text, fontFamily: 'inherit', padding: 0 }}>
                 <span style={{ flex: 1, minWidth: 0, fontSize: 15, fontWeight: 600, lineHeight: 1.3 }}>
                   {l.name}{l.size ? <span style={{ color: C.dim, fontWeight: 700 }}> · {l.size}</span> : ''} <span style={{ fontSize: 12, color: C.dim }}>✎</span>
                 </span>
@@ -505,6 +509,13 @@ function SalesView({ user, notify }) {
         </button>
         {!!cart.length && (
           <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+            {/* Giving a discount used to require knowing that tapping a bill line opened an
+                editor whose third tab was Discount — three steps, none of them signposted, so
+                the feature was effectively invisible to anyone not told about it. It gets its
+                own button, on the bill, next to the other things you do to a whole bill. */}
+            <button onClick={() => setPickDiscount(true)} style={{ ...S.btnGhost, flex: 1, padding: '12px', borderColor: C.green, color: C.green, fontWeight: 800 }}>
+              🏷 {ARABIC ? 'خصم' : 'Discount'}
+            </button>
             <button onClick={holdSale} style={{ ...S.btnGhost, flex: 1, padding: '12px' }}>⏸ {ARABIC ? 'تعليق' : 'Hold'}</button>
             <button onClick={() => { setCart([]); setTendered(''); }} style={{ ...S.btnGhost, flex: 1, padding: '12px', color: C.red }}>✕ {ARABIC ? 'إلغاء' : 'Clear'}</button>
           </div>
@@ -537,10 +548,19 @@ function SalesView({ user, notify }) {
       )}
 
       {editLine && (
-        <LineEditModal line={editLine}
+        <LineEditModal line={editLine} initialField={editField}
           onClose={() => setEditLine(null)}
           onApply={(qty, price, disc, disc_note) => { if (qty <= 0) removeLine(editLine.id); else setLine(editLine.id, { qty, price, disc, disc_note }); setEditLine(null); }}
           onRemove={() => { removeLine(editLine.id); setEditLine(null); }} />
+      )}
+      {pickDiscount && (
+        <DiscountPicker cart={cart}
+          onClose={() => { setPickDiscount(false); refocus(); }}
+          onPick={(l) => { setPickDiscount(false); setEditField('disc'); setEditLine(l); }}
+          onClearAll={() => {
+            setCart((prev) => prev.map((l) => ({ ...l, disc: 0, disc_note: '' })));
+            setPickDiscount(false); refocus();
+          }} />
       )}
       {quickItem && (
         <QuickItemModal notify={notify} onClose={() => setQuickItem(false)}
@@ -622,6 +642,70 @@ function WeightModal({ product, onClose, onAdd, notify }) {
     </Overlay>
   );
 }
+// ── 🏷 Discount: which line? ─────────────────────────────────────────────────────
+//
+// A discount is always ON something, so the first question is which item — not how much.
+// Asking for the amount first is how a bill ends up with a lump sum against nothing in
+// particular, which is exactly what the per-line model exists to avoid.
+//
+// Lines that already carry a discount say so here, so a cashier adding a second one can see
+// what has already been given without leaving the screen.
+function DiscountPicker({ cart, onClose, onPick, onClearAll }) {
+  const totalDisc = cart.reduce((s, l) => s + (Number(l.disc) || 0), 0);
+  return (
+    <Overlay onClose={onClose}>
+      <div style={{ ...S.card, width: 400, display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <div style={{ fontWeight: 800, fontSize: 17 }}>
+          🏷 {ARABIC ? 'خصم على أي صنف؟' : 'Discount which item?'}
+        </div>
+        <div style={{ color: C.dim, fontSize: 13, marginTop: -6 }}>
+          {ARABIC ? 'يمكنك خصم أكثر من صنف في نفس الفاتورة' : 'You can discount more than one item on the same bill'}
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: '46vh', overflow: 'auto' }}>
+          {cart.map((l) => {
+            const disc = Number(l.disc) || 0;
+            return (
+              <button key={l.id} onClick={() => onPick(l)} style={{
+                display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', textAlign: 'start',
+                borderRadius: 10, border: `1px solid ${disc > 0 ? C.green : C.line}`,
+                background: C.panel2, color: C.text, cursor: 'pointer', fontFamily: 'inherit',
+              }}>
+                <span style={{ flex: 1, minWidth: 0 }}>
+                  <span style={{ fontWeight: 700, fontSize: 15 }}>
+                    {l.name}{l.size ? <span style={{ color: C.dim }}> · {l.size}</span> : ''}
+                  </span>
+                  <span style={{ display: 'block', color: C.dim, fontSize: 12 }}>
+                    {l.qty} × {amount(l.price)}
+                    {disc > 0 && (
+                      <span style={{ color: C.green, fontWeight: 800 }}>
+                        {'  ·  '}{ARABIC ? 'خصم' : 'discount'} −{amount(disc)}
+                        {l.disc_note ? ` (${l.disc_note})` : ''}
+                      </span>
+                    )}
+                  </span>
+                </span>
+                <span style={{ fontWeight: 800, fontSize: 16, fontVariantNumeric: 'tabular-nums' }}>
+                  {amount(l.price * l.qty - disc)}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Taking every discount back off is one action, not one per line. Only offered when
+            there is something to undo. */}
+        {totalDisc > 0 && (
+          <button onClick={onClearAll} style={{ ...S.btnGhost, padding: '12px', color: C.red }}>
+            ✕ {ARABIC ? `إزالة كل الخصومات (${amount(totalDisc)})` : `Remove all discounts (${amount(totalDisc)})`}
+          </button>
+        )}
+        <button onClick={onClose} style={{ ...S.btnGhost, padding: '12px' }}>{ARABIC ? 'إغلاق' : 'Close'}</button>
+      </div>
+    </Overlay>
+  );
+}
+
 // ── Edit a cart line: quantity, price override, and a discount in JOD ────────────
 //
 // The discount lives HERE, on the line, rather than as one field at the foot of the bill.
@@ -632,8 +716,8 @@ function WeightModal({ product, onClose, onAdd, notify }) {
 //
 // It is an AMOUNT, not a percentage, because that is how the counter bargains. The keypad
 // takes dinars directly, so nothing is converted in anyone's head.
-function LineEditModal({ line, onClose, onApply, onRemove }) {
-  const [field, setField] = useState('qty');
+function LineEditModal({ line, onClose, onApply, onRemove, initialField = 'qty' }) {
+  const [field, setField] = useState(initialField);
   const [qty, setQty] = useState(String(line.qty));
   const [price, setPrice] = useState(String(line.price));
   const [disc, setDisc] = useState(line.disc ? String(line.disc) : '');
