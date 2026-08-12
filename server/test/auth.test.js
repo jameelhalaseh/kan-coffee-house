@@ -4,9 +4,14 @@
 // and "this session is allowed to do that". The tests below pin the behaviours that make
 // those claims true — single active session, no sliding expiry, lockout that does not leak
 // which usernames exist, and no token accepted from anywhere but the Bearer header.
+const crypto = require('crypto');
 const request = require('supertest');
 const bcrypt = require('bcryptjs');
 const { seedUsers, login, auth, USERS, app, db } = require('./helpers');
+
+// The session token is stored as SHA-256 (migration 0010), so a test that reaches into
+// app_users has to look it up the same way the server does.
+const stored = (token) => crypto.createHash('sha256').update(String(token)).digest('hex');
 
 beforeAll(seedUsers);
 afterAll(() => db.pool.end());
@@ -141,7 +146,7 @@ describe('token transport', () => {
 describe('session expiry', () => {
   test('an expired token is refused', async () => {
     const token = await login('admin');
-    await db.query('update app_users set token_exp = now() - interval \'1 minute\' where session_token = $1', [token]);
+    await db.query('update app_users set token_exp = now() - interval \'1 minute\' where session_token = $1', [stored(token)]);
     const res = await request(app).get('/api/products').set(...auth(token));
     expect(res.status).toBe(401);
     expect(res.body).toEqual({ error: 'session' });
@@ -150,9 +155,9 @@ describe('session expiry', () => {
   test('using a session does NOT extend its expiry', async () => {
     // No sliding TTL: a till left logged in overnight still expires on schedule.
     const token = await login('admin');
-    const before = (await db.query('select token_exp from app_users where session_token = $1', [token])).rows[0].token_exp;
+    const before = (await db.query('select token_exp from app_users where session_token = $1', [stored(token)])).rows[0].token_exp;
     await request(app).get('/api/products').set(...auth(token));
-    const after = (await db.query('select token_exp from app_users where session_token = $1', [token])).rows[0].token_exp;
+    const after = (await db.query('select token_exp from app_users where session_token = $1', [stored(token)])).rows[0].token_exp;
     expect(after).toEqual(before);
   });
 });

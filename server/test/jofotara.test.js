@@ -290,12 +290,22 @@ describe('submission', () => {
     expect(res.body).toMatchObject({ uuid: 'alt-uuid', qr: 'ALT-QR' });
   });
 
-  test('a cashier holding the history view may submit', async () => {
-    // Filing is part of finishing a sale, so it is not admin-gated.
+  test('a cashier holding the history view may NOT submit (12 Aug audit)', async () => {
+    // This used to be allowed on the reasoning that "filing is part of finishing a sale".
+    // The audit disagreed: submitting to the ISTD is an outbound legal filing on the
+    // business's behalf, and the standard cashier holds `history`, so every till could file.
+    // The gate is now `reports` only — admins still bypass it.
     configure();
     stubFetch(accepted());
     await saleRow();
-    expect((await send(cashierToken, 'jo-1')).status).toBe(200);
+    expect((await send(cashierToken, 'jo-1')).status).toBe(403);
+  });
+
+  test('a user with the reports view may submit', async () => {
+    configure();
+    stubFetch(accepted());
+    await saleRow();
+    expect((await send(adminToken, 'jo-1')).status).toBe(200);
   });
 
   test('requires a session', async () => {

@@ -9,7 +9,10 @@ const { fail } = require('../validate');
 const { FLOORS, ordersTable, DEFAULT_FLOOR } = require('../floors');
 const jofotara = require('../jofotara');
 
-const gate = [requireSession, requireView('history', 'reports')];
+// `history` was in this gate until the audit of 12 Aug, and the standard cashier holds it.
+// Submitting to the ISTD is an outbound legal filing on the business's behalf, so it belongs
+// with whoever owns the tax position — the `reports` grant, or an admin.
+const gate = [requireSession, requireView('reports')];
 
 // GET /api/jofotara/status → is the integration wired up on this deployment?
 // The UI uses this to enable/disable the button instead of guessing.

@@ -266,23 +266,25 @@ describe('delete', () => {
   });
 });
 
-describe('stock log endpoint', () => {
-  test('any session may append an entry', async () => {
+describe('stock log endpoint (removed by the 12 Aug audit)', () => {
+  // It accepted whatever the caller sent, so a cashier could write 'adjust' rows for products
+  // that never moved and bury a real adjustment in noise. Deleted rather than gated: every
+  // path that changes stock already writes its own row inside the same transaction.
+  test('POST /stock-log no longer exists', async () => {
     const res = await request(app).post('/api/stock-log').set(...auth(cashierToken))
-      .send({ kind: 'adjust', item_id: '1', name: 'Something', old_qty: 5, new_qty: 3 });
-    expect(res.body).toEqual({ ok: true });
+      .send({ kind: 'adjust', item_id: '1', name: 'ghost', old_qty: 0, new_qty: 999 });
+    expect(res.status).toBe(404);
   });
 
-  test('the actor comes from the session, not the body', async () => {
-    // Otherwise the person causing shrinkage also authors the record of it.
-    await request(app).post('/api/stock-log').set(...auth(cashierToken))
-      .send({ kind: 'adjust', name: 'Something', changed_by: 'test_admin' });
-    const { rows } = await db.query('select changed_by from stock_log');
-    expect(rows[0].changed_by).toBe('test_cashier');
-  });
-
-  test('requires a session', async () => {
-    expect((await request(app).post('/api/stock-log').send({ kind: 'adjust' })).status).toBe(401);
+  test('a real stock change still writes an attributable row', async () => {
+    const p = await makeProduct({ name: 'Audited Bottle', stock: 5 });
+    await request(app).patch(`/api/products/${p.id}/stock`).set(...auth(adminToken)).send({ delta: -2 });
+    const { rows } = await db.query(
+      'select kind, changed_by, old_qty, new_qty from stock_log where item_id = $1 order by id desc limit 1',
+      [String(p.id)]
+    );
+    expect(rows[0]).toMatchObject({ changed_by: 'test_admin' });
+    expect(Number(rows[0].new_qty)).toBe(3);
   });
 });
 

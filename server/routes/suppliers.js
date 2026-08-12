@@ -5,7 +5,7 @@
 // No expiry tracking: this is a liquor store (migration 0007 dropped the column).
 const router = require('express').Router();
 const db = require('../db');
-const { requireSession, requireAdmin } = require('../auth');
+const { requireSession, requireAdmin, requireView } = require('../auth');
 const { fail, dbError } = require('../validate');
 
 // ── Suppliers ───────────────────────────────────────────────────────────────────
@@ -24,7 +24,7 @@ router.get('/suppliers', requireSession, async (req, res, next) => {
 // user asking for it back — not an error. So an inactive row with that name is revived
 // rather than 409'd, which is also the only way back: nothing in the UI lists inactive
 // suppliers, so a bare 409 would leave the name permanently unusable.
-router.post('/suppliers', requireSession, async (req, res, next) => {
+router.post('/suppliers', requireSession, requireView('inventory', 'receive'), async (req, res, next) => {
   try {
     const s = req.body || {};
     const name = String(s.name || '').trim();
@@ -44,7 +44,7 @@ router.post('/suppliers', requireSession, async (req, res, next) => {
   } catch (e) { dbError(res, next, e); }
 });
 
-router.put('/suppliers/:id', requireSession, async (req, res, next) => {
+router.put('/suppliers/:id', requireSession, requireView('inventory', 'receive'), async (req, res, next) => {
   try {
     const s = req.body || {};
     await db.query('update suppliers set name=$1, phone=$2, note=$3 where id=$4',
@@ -68,7 +68,10 @@ router.delete('/suppliers/:id', requireSession, requireAdmin, async (req, res, n
 //
 // The product is locked and checked first: an unknown product_id used to fall through to
 // `rows[0] && ...`, writing a stock_log row full of nulls and answering 200 with no stock.
-router.post('/batches', requireSession, async (req, res, next) => {
+// Receiving stock is a stock WRITE: it increments products.stock and books a cost that feeds
+// margin reporting. Session-only until the audit of 12 Aug, which meant a cashier with no
+// inventory grant could invent a delivery to cover a shortfall.
+router.post('/batches', requireSession, requireView('inventory', 'receive'), async (req, res, next) => {
   const b = req.body || {};
   const qty = Number(b.qty);
   const cost = b.cost == null || b.cost === '' ? 0 : Number(b.cost);

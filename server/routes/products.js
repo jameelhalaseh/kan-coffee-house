@@ -25,6 +25,11 @@ router.get('/products/barcode/:code', requireSession, async (req, res, next) => 
   try {
     const code = String(req.params.code || '').trim();
     if (!code) return fail(res, 'invalid', 400);
+    // A barcode is printable ASCII. A NUL byte here used to reach Postgres, which rejects it
+    // in a text parameter, and surfaced as a 500 — which pages the on-call channel through
+    // alert(). Cheap malformed requests then become an alert-fatigue lever. This is the
+    // caller's mistake, so it is a 400. The length cap matches the import validator.
+    if (code.length > 64 || !/^[\x20-\x7e]+$/.test(code)) return fail(res, 'invalid', 400);
     const { rows } = await db.query(
       'select id, barcode, name, price, cat, cost, stock, unit, active from products where barcode = $1',
       [code]
@@ -98,10 +103,21 @@ router.put('/products/:id', requireSession, async (req, res, next) => {
     if (!before.rows[0]) { await client.query('rollback'); return fail(res, 'not_found', 404); }
     const cur = before.rows[0];
 
+    // STOCK IS IN THIS LIST, and that is the whole point of the list.
+    //
+    // PATCH /products/:id/stock is gated (admin or the `inventory` view) because it is how a
+    // missing bottle gets "corrected" away. This route writes the same column, and until the
+    // audit of 12 Aug it let a sales-only cashier set stock to anything — 403 on the guarded
+    // door, 200 on this one — and then wrote a stock_log 'adjust' row that made the change
+    // look authorised. The log meant to catch shrinkage was corroborating it.
+    //
+    // Staff who legitimately count stock hold `inventory`; send them to the gated endpoint
+    // rather than widening this one.
     if (req.user.role !== 'admin') {
       const changed =
         Number(p.price ?? 0) !== Number(cur.price ?? 0) ||
         Number(p.cost ?? 0) !== Number(cur.cost ?? 0) ||
+        Number(p.stock ?? 0) !== Number(cur.stock ?? 0) ||
         (barcode ?? null) !== (cur.barcode ?? null);
       if (changed) { await client.query('rollback'); return fail(res, 'admin_only', 403); }
     }
@@ -304,18 +320,16 @@ router.delete('/products/:id', requireSession, requireAdmin, async (req, res, ne
 // `changed_by` is taken from the SESSION and any client-supplied value is ignored.
 // Previously the whole row came from the request body, so the person causing shrinkage
 // could also author the record of it — the audit trail attested to nothing.
-router.post('/stock-log', requireSession, async (req, res, next) => {
-  try {
-    const s = req.body || {};
-    await db.query(
-      `insert into stock_log (kind,item_id,name,old_qty,new_qty,changed_by)
-       values ($1,$2,$3,$4,$5,$6)`,
-      [s.kind ?? null, s.item_id != null ? String(s.item_id) : null, s.name ?? null,
-       s.old_qty ?? null, s.new_qty ?? null, req.user.username]
-    );
-    res.json({ ok: true });
-  } catch (e) { dbError(res, next, e); }
-});
+// POST /stock-log was REMOVED (audit of 12 Aug).
+//
+// It accepted whatever the caller sent: a cashier could write 'adjust' rows for products that
+// never moved, burying a real adjustment in plausible noise. The actor was authentic but
+// nothing else was.
+//
+// Nothing is lost by deleting it. Every path that actually changes stock already writes its
+// own audit row inside the same transaction as the change — PUT /products/:id, PATCH
+// /products/:id/stock, POST /batches, and the void in DELETE /orders/:id — which is stronger,
+// because those rows cannot exist without the change they describe.
 
 // ── Settings: categories (admin-editable product category list) ──────────────────
 // app_settings.value holds a JSON string (TEXT, never ::jsonb) — same convention as the template.

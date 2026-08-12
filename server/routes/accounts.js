@@ -32,13 +32,10 @@ router.get('/customers', requireSession, requireAdmin, async (req, res, next) =>
 // `actor` comes from the SESSION, never the body. The action text stays client-supplied
 // (it's a free-form description), but WHO performed it is now attested by the server, so a
 // forged action string can no longer be pinned on someone else.
-router.post('/admin-log', requireSession, async (req, res, next) => {
-  try {
-    await db.query('insert into admin_log (action, actor) values ($1, $2)',
-      [(req.body && req.body.action) ?? null, req.user.username]);
-    res.json({ ok: true });
-  } catch (e) { next(e); }
-});
+// POST /admin-log was REMOVED (audit of 12 Aug): it let any session append arbitrary text to
+// the admin audit trail. The actor came from the session and could not be forged, but the
+// content could — enough to bury a real action in noise. Server-side writes remain: see the
+// receipt-edit entry in reporting/pgRepo.js and the user changes in this file.
 
 router.get('/admin-log', requireSession, requireAdmin, async (req, res, next) => {
   try {

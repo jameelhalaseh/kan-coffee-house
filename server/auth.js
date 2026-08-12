@@ -22,6 +22,22 @@ const TTL_HOURS = Number.isFinite(_ttl) && _ttl > 0 ? _ttl : 12; // reject 0/NaN
 
 const newToken = () => crypto.randomBytes(24).toString('hex'); // 48 hex chars (mirrors encode(gen_random_bytes(24),'hex'))
 
+// ── Secrets at rest ──────────────────────────────────────────────────────────
+// The session token and the reset code are BEARER SECRETS: whoever holds one is the user.
+// Until the audit of 12 Aug they were stored verbatim, so anyone who could read the database
+// — a backup file, a support dump, a future read-only bug — could take over every live
+// session or complete a password reset without touching the mailbox.
+//
+// Now only their SHA-256 lands in the database. The plaintext exists in the client's
+// localStorage and in transit, and nowhere else. sha256 (not bcrypt) is the right primitive
+// here: these are 192 bits of crypto-random, so there is nothing to brute-force and the
+// lookup stays a single indexed comparison on every request.
+//
+// The reset code is the weaker case and honestly so: 6 digits is only 10^6 preimages, so the
+// hash protects against casual disclosure rather than a determined offline attack. What
+// actually guards it is the 15-minute expiry plus the per-username lockout.
+const hashSecret = (v) => crypto.createHash('sha256').update(String(v)).digest('hex');
+
 // Shape returned to the client on login/validate — never includes pass_hash/session_token-as-secret.
 function userJson(u, token) {
   return {
@@ -95,8 +111,9 @@ async function loginUser(username, password) {
   const token = newToken();
   await db.query(
     'update app_users set session_token = $1, token_exp = now() + make_interval(hours => $2) where id = $3',
-    [token, TTL_HOURS, u.id]
+    [hashSecret(token), TTL_HOURS, u.id]
   );
+  // The caller gets the PLAINTEXT once, here. It is never readable from the database again.
   return userJson(u, token);
 }
 
@@ -105,15 +122,17 @@ async function validateToken(token) {
   if (!token) return null;
   const { rows } = await db.query(
     'select * from app_users where session_token = $1 and token_exp > now() and active',
-    [token]
+    [hashSecret(token)]
   );
   const u = rows[0];
-  return u ? userJson(u, u.session_token) : null;
+  // Echo back the token the CALLER sent, not the column: the column is now a hash, and
+  // returning it would hand the client a credential that does not work.
+  return u ? userJson(u, token) : null;
 }
 
 // ── app_logout (idempotent, unauthenticated) ─────────────────────────────────
 async function logoutToken(token) {
-  if (token) await db.query('update app_users set session_token = null where session_token = $1', [token]);
+  if (token) await db.query('update app_users set session_token = null where session_token = $1', [hashSecret(token)]);
   return { ok: true };
 }
 
@@ -121,7 +140,7 @@ async function logoutToken(token) {
 async function changePassword(token, oldPw, newPw) {
   const { rows } = await db.query(
     'select * from app_users where session_token = $1 and token_exp > now() and active',
-    [token]
+    [hashSecret(token)]
   );
   const u = rows[0];
   if (!u) return { error: 'session' };
@@ -169,7 +188,7 @@ async function requestReset(username) {
   }
   await db.query(
     "update app_users set reset_code = $1, reset_exp = now() + interval '15 minutes' where id = $2",
-    [code, u.id]
+    [hashSecret(code), u.id]
   );
   return { ok: true, email_masked: maskEmail(u.email), username: u.username };
 }
@@ -191,7 +210,12 @@ async function confirmReset(username, code, newPw) {
   );
   const u = rows[0];
   if (!u) { await recordFail(key); return { error: 'bad_code' }; }
-  if (!u.reset_code || new Date(u.reset_exp).getTime() < Date.now() || u.reset_code !== String(code)) {
+  // timingSafeEqual over the hashes: equal-length buffers, so no early-exit on the first
+  // differing character.
+  const supplied = Buffer.from(hashSecret(code), 'hex');
+  const stored = u.reset_code && /^[0-9a-f]{64}$/.test(u.reset_code) ? Buffer.from(u.reset_code, 'hex') : null;
+  const codeOk = !!stored && crypto.timingSafeEqual(supplied, stored);
+  if (!u.reset_code || new Date(u.reset_exp).getTime() < Date.now() || !codeOk) {
     await recordFail(key);
     return { error: 'bad_code' };
   }
@@ -223,7 +247,7 @@ async function requireSession(req, res, next) {
     if (!token) return res.status(401).json({ error: 'session' });
     const { rows } = await db.query(
       'select id, username, email, role, allowed_views from app_users where session_token = $1 and token_exp > now() and active',
-      [token]
+      [hashSecret(token)]
     );
     if (!rows[0]) return res.status(401).json({ error: 'session' });
     req.user = rows[0];   // NOTE: token_exp is deliberately NOT extended (no sliding TTL)

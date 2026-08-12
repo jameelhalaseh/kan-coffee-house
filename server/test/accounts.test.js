@@ -64,40 +64,37 @@ describe('customers (PII)', () => {
 });
 
 describe('admin log (audit)', () => {
+  // The API no longer accepts appends (12 Aug audit); the server writes these rows itself, so
+  // the read tests below seed the table the way the server does.
   const append = (token, body) => request(app).post('/api/admin-log').set(...auth(token)).send(body);
+  const seed = (action, actor = 'test_admin') =>
+    db.query('insert into admin_log (action, actor) values ($1,$2)', [action, actor]);
   const read = (token, qs = '') => request(app).get(`/api/admin-log${qs}`).set(...auth(token));
 
-  test('any session may append an entry', async () => {
-    expect((await append(cashierToken, { action: 'opened the drawer' })).body).toEqual({ ok: true });
+  test('POST /admin-log no longer exists (12 Aug audit)', async () => {
+    // Any session could append arbitrary text to the audit trail. Server-side writes remain.
+    expect((await append(cashierToken, { action: 'opened the drawer' })).status).toBe(404);
   });
 
   test('a cashier cannot read the audit log', async () => {
     expect((await read(cashierToken)).status).toBe(403);
   });
 
-  test('attributes the entry to the session user, not the body', async () => {
-    // The action text is free-form, but WHO did it must be attested by the server —
-    // otherwise the log can be used to frame a colleague.
-    await append(cashierToken, { action: 'voided a sale', actor: 'test_admin' });
-    const rows = (await read(adminToken)).body;
-    expect(rows[0]).toMatchObject({ action: 'voided a sale', actor: 'test_cashier' });
-  });
-
   test('returns entries oldest-first for display', async () => {
-    await append(adminToken, { action: 'first' });
-    await append(adminToken, { action: 'second' });
+    await seed('first');
+    await seed('second');
     const rows = (await read(adminToken)).body;
     expect(rows.map((r) => r.action)).toEqual(['first', 'second']);
   });
 
   test('?limit keeps the most recent entries', async () => {
-    for (const action of ['a', 'b', 'c']) await append(adminToken, { action });
+    for (const action of ['a', 'b', 'c']) await seed(action);
     const rows = (await read(adminToken, '?limit=2')).body;
     expect(rows.map((r) => r.action)).toEqual(['b', 'c']);
   });
 
   test('ignores a junk limit', async () => {
-    await append(adminToken, { action: 'only' });
+    await seed('only');
     expect((await read(adminToken, '?limit=abc')).body).toHaveLength(1);
   });
 });
