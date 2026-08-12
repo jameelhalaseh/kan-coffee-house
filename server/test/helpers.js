@@ -52,11 +52,11 @@ async function clearOrders() {
 // Insert a catalogue product straight into the DB and return the row (id included).
 // Bypasses the API on purpose: tests of the ORDER path should not fail because the
 // product path changed.
-async function makeProduct({ name = 'Fixture Bottle', barcode = null, price = 10, cost = 6, stock = 100, cat = 'Whiskey' } = {}) {
+async function makeProduct({ name = 'Fixture Bottle', barcode = null, price = 10, cost = 6, stock = 100, cat = 'Whiskey', size = null, low_at = 5 } = {}) {
   const { rows } = await db.query(
-    `insert into products (barcode, name, price, cat, cost, stock, unit, active)
-     values ($1,$2,$3,$4,$5,$6,'ea',true) returning *`,
-    [barcode, name, price, cat, cost, stock]
+    `insert into products (barcode, name, price, cat, cost, stock, unit, size, low_at, active)
+     values ($1,$2,$3,$4,$5,$6,'ea',$7,$8,true) returning *`,
+    [barcode, name, price, cat, cost, stock, size, low_at]
   );
   return rows[0];
 }

@@ -47,6 +47,9 @@ function load() {
       const s = seed();
       for (const k of Object.keys(s)) if (d[k] === undefined) d[k] = s[k];
       d.products.forEach((p) => { if (p.unit === undefined) p.unit = 'ea'; });
+      // Browsers hold a demo catalogue from before size/low_at existed. Fill the defaults in
+      // rather than letting `undefined` reach the low-stock badge as NaN.
+      d.products.forEach((p) => { if (p.low_at === undefined) p.low_at = 5; if (p.size === undefined) p.size = null; });
       return d;
     }
   } catch (_) {}
@@ -103,7 +106,7 @@ async function handle(method, path, body) {
     if (method === 'GET') return db.products.slice().sort((a, b) => a.name.localeCompare(b.name));
     if (method === 'POST') {
       if (body.barcode && db.products.some((x) => x.barcode === body.barcode)) err('exists', 409);
-      const p = { id: db.nextId++, barcode: body.barcode || null, name: body.name, price: +body.price || 0, cat: body.cat || null, cost: +body.cost || 0, stock: +body.stock || 0, unit: body.unit === 'kg' ? 'kg' : 'ea', active: true };
+      const p = { id: db.nextId++, barcode: body.barcode || null, name: body.name, price: +body.price || 0, cat: body.cat || null, cost: +body.cost || 0, stock: +body.stock || 0, unit: body.unit === 'kg' ? 'kg' : 'ea', size: body.size || null, low_at: Number.isFinite(+body.low_at) ? +body.low_at : 5, active: true };
       db.products.push(p); save(db); return p;
     }
     if (method === 'PUT') {

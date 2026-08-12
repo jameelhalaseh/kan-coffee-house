@@ -5,6 +5,9 @@ import { ARABIC } from '../client.config';
 import { catColor } from '../lib';
 import { Field, Overlay } from './ui';
 
+// The shelf's usual bottles. Not an enum — see the free-text box beside them.
+const SIZE_PRESETS = ['500ml', '750ml', '1L'];
+
 function ProductModal({ initial, onClose, onSaved, notify, editing }) {
   const [barcode, setBarcode] = useState(initial.barcode || '');
   const [name, setName] = useState(initial.name || '');
@@ -12,7 +15,8 @@ function ProductModal({ initial, onClose, onSaved, notify, editing }) {
   const [cat, setCat] = useState(initial.cat || '');
   const [stock, setStock] = useState(initial.stock != null ? String(initial.stock) : '');
   const [cost, setCost] = useState(initial.cost != null ? String(initial.cost) : '');
-  const [unit, setUnit] = useState(initial.unit === 'kg' ? 'kg' : 'ea');
+  const [size, setSize] = useState(initial.size || '');
+  const [lowAt, setLowAt] = useState(initial.low_at != null ? String(initial.low_at) : '5');
   const [cats, setCats] = useState([]);
   const [newCat, setNewCat] = useState(false);   // typing a category that doesn't exist yet
   const [busy, setBusy] = useState(false);
@@ -33,7 +37,13 @@ function ProductModal({ initial, onClose, onSaved, notify, editing }) {
     if (!name.trim()) { notify(ARABIC ? 'الاسم مطلوب' : 'Name required', 'red'); return; }
     if (!cat.trim()) { notify(ARABIC ? 'اختر فئة للمنتج' : 'Pick a category for this product', 'red'); return; }
     setBusy(true);
-    const body = { barcode: barcode.trim() || null, name: name.trim(), price: Number(price) || 0, cat: cat.trim(), cost: Number(cost) || 0, stock: Number(stock) || 0, unit };
+    // unit is pinned to 'ea': an off-licence sells bottles, not weight. The column and the
+    // kg checkout path stay for any legacy weighed row, but this form no longer creates one.
+    const body = {
+      barcode: barcode.trim() || null, name: name.trim(), price: Number(price) || 0,
+      cat: cat.trim(), cost: Number(cost) || 0, stock: Number(stock) || 0, unit: 'ea',
+      size: size.trim() || null, low_at: Number(lowAt) >= 0 ? Number(lowAt) : 5,
+    };
     // A brand-new category is added to the shared list so it shows up as a chip everywhere.
     // Non-admins can't write settings — the product still saves with the category either way.
     if (!cats.includes(body.cat)) {
@@ -60,18 +70,37 @@ function ProductModal({ initial, onClose, onSaved, notify, editing }) {
         <div style={{ fontWeight: 800, fontSize: 18 }}>{editing ? (ARABIC ? 'تعديل منتج' : 'Edit product') : (ARABIC ? 'منتج جديد' : 'New product')}</div>
         <Field label={ARABIC ? 'الباركود' : 'Barcode'}><input style={S.input} value={barcode} onChange={(e) => setBarcode(e.target.value)} /></Field>
         <Field label={ARABIC ? 'الاسم' : 'Name'}><input ref={nameRef} style={S.input} value={name} onChange={(e) => setName(e.target.value)} /></Field>
-        <Field label={ARABIC ? 'تباع بـ' : 'Sold by'}>
-          <div style={{ display: 'flex', gap: 8 }}>
-            {[['ea', ARABIC ? 'بالقطعة' : 'Each'], ['kg', ARABIC ? 'بالوزن (كغ)' : 'Weight (kg)']].map(([v, lbl]) => (
-              <button key={v} type="button" onClick={() => setUnit(v)} style={{ ...S.btnGhost, flex: 1, padding: '10px', ...(unit === v ? { background: C.blue, color: '#fff', borderColor: C.blue } : {}) }}>{lbl}</button>
-            ))}
+        {/* Size, not weight. The presets are the shelf's common bottles; the box below takes
+            anything else (1.75L, 200ml, a 6-pack) because an off-licence always has one. Blank
+            is fine — a size is a label, and nothing computes with it. */}
+        <Field label={ARABIC ? 'الحجم (اختياري)' : 'Size (optional)'}>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 2 }}>
+            {SIZE_PRESETS.map((v) => {
+              const on = size.trim().toLowerCase() === v.toLowerCase();
+              return (
+                <button key={v} type="button" onClick={() => setSize(on ? '' : v)} style={{
+                  ...S.btnGhost, padding: '8px 14px', fontSize: 13,
+                  ...(on ? { background: C.blue, color: '#fff', borderColor: C.blue, fontWeight: 800 } : {}),
+                }}>{v}</button>
+              );
+            })}
           </div>
+          <input style={{ ...S.input, marginTop: 8 }} value={size} onChange={(e) => setSize(e.target.value)}
+            placeholder={ARABIC ? 'أو اكتب حجماً آخر' : 'or type another size'} maxLength={24} />
         </Field>
         <div style={{ display: 'flex', gap: 10 }}>
-          <Field label={unit === 'kg' ? (ARABIC ? 'السعر / كغ' : 'Price / kg') : (ARABIC ? 'السعر' : 'Price')}><input style={S.input} type="number" step="0.001" value={price} onChange={(e) => setPrice(e.target.value)} /></Field>
+          <Field label={ARABIC ? 'السعر' : 'Price'}><input style={S.input} type="number" step="0.001" value={price} onChange={(e) => setPrice(e.target.value)} /></Field>
           <Field label={ARABIC ? 'الكمية' : 'Stock'}><input style={S.input} type="number" step="0.001" value={stock} onChange={(e) => setStock(e.target.value)} /></Field>
         </div>
-        <Field label={ARABIC ? 'التكلفة' : 'Cost'}><input style={S.input} type="number" step="0.001" value={cost} onChange={(e) => setCost(e.target.value)} /></Field>
+        <div style={{ display: 'flex', gap: 10 }}>
+          <Field label={ARABIC ? 'التكلفة' : 'Cost'}><input style={S.input} type="number" step="0.001" value={cost} onChange={(e) => setCost(e.target.value)} /></Field>
+          {/* The reorder point, per product. It used to be a hard-coded 5 for the whole shop,
+              which warns too late on a fast-moving crate and nags forever on a slow bottle. */}
+          <Field label={ARABIC ? 'تنبيه عند' : 'Low at'}>
+            <input style={S.input} type="number" step="1" min="0" value={lowAt}
+              onChange={(e) => setLowAt(e.target.value)} />
+          </Field>
+        </div>
 
         {/* Category is required — an uncategorised product is unreachable on the Sales
             screen now that it browses by shelf. Pick an existing one or name a new one. */}

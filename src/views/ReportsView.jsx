@@ -27,7 +27,7 @@ function ReportsView({ notify }) {
     const qs = `?from=${from}&to=${to}`;
     api.get('/reports/summary' + qs).then(setSum).catch(() => notify(ARABIC ? 'تعذّر تحميل التقارير' : 'Failed to load reports', 'red'));
     api.get('/reports/top-products' + qs + '&limit=10').then(setTop).catch(() => {});
-    api.get('/reports/low-stock?threshold=5').then(setLow).catch(() => {});
+    api.get('/reports/low-stock').then(setLow).catch(() => {});
     api.get('/reports/abc' + qs).then(setAbc).catch(() => {});
     api.get('/reports/zreport?date=' + today).then(setZrep).catch(() => {});
     api.get('/timeclock' + qs).then(setHours).catch(() => {});

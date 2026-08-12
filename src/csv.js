@@ -16,11 +16,14 @@ const HEADER_ALIASES = {
   stock: 'stock', qty: 'stock', quantity: 'stock', onhand: 'stock', count: 'stock',
   cat: 'cat', category: 'cat', dept: 'cat', department: 'cat', type: 'cat',
   unit: 'unit', uom: 'unit',
+  size: 'size', volume: 'size', bottlesize: 'size', ml: 'size',
+  lowat: 'low_at', low: 'low_at', lowstock: 'low_at', reorder: 'low_at',
+  reorderpoint: 'low_at', reorderlevel: 'low_at', minstock: 'low_at', min: 'low_at',
   active: 'active', enabled: 'active',
 };
 
 const REQUIRED_COLUMNS = ['name'];
-export const IMPORT_COLUMNS = ['barcode', 'name', 'price', 'cost', 'stock', 'cat', 'unit', 'active'];
+export const IMPORT_COLUMNS = ['barcode', 'name', 'price', 'cost', 'stock', 'cat', 'size', 'low_at', 'active'];
 
 // Cap the import so a mis-picked 200k-row export cannot wedge the server in one request.
 export const MAX_IMPORT_ROWS = 5000;
@@ -152,6 +155,21 @@ export function parseProductCsv(text) {
     const unitRaw = String(cell('unit') || '').trim().toLowerCase();
     if (unitRaw && unitRaw !== 'ea' && unitRaw !== 'kg') rowErrors.push(`unit "${unitRaw}" must be ea or kg`);
 
+    // Size is a label, not a measurement — anything the shop writes on the shelf edge is
+    // valid. Only the length is policed, so one runaway cell cannot carry a paragraph.
+    const size = String(cell('size') || '').trim().slice(0, 24);
+
+    // A blank low_at means "use the default", not "warn at zero" — a product that only warns
+    // when it is already gone is worse than no warning, because it reads as covered.
+    const lowRaw = String(cell('low_at') || '').trim();
+    let lowAt = 5;
+    if (lowRaw) {
+      const parsedLow = parseNumber(lowRaw);
+      if (!parsedLow.ok || parsedLow.value == null || parsedLow.value < 0) {
+        rowErrors.push(`low_at "${lowRaw}" must be a number of 0 or more`);
+      } else lowAt = parsedLow.value;
+    }
+
     const activeParsed = parseBool(cell('active'), true);
     if (!activeParsed.ok) rowErrors.push(`active "${String(cell('active')).trim()}" must be yes or no`);
 
@@ -167,6 +185,8 @@ export function parseProductCsv(text) {
       stock: numbers.stock,
       cat: String(cell('cat') || '').trim() || null,
       unit: unitRaw === 'kg' ? 'kg' : 'ea',
+      size: size || null,
+      low_at: lowAt,
       active: activeParsed.value,
     });
   });
@@ -178,6 +198,6 @@ export function parseProductCsv(text) {
 export function importTemplateCsv() {
   return '﻿' + [
     IMPORT_COLUMNS.join(','),
-    '6291234567890,Example Whiskey 700ml,24.500,17.000,12,Whiskey,ea,yes',
+    '6291234567890,Example Whiskey,24.500,17.000,12,Whiskey,700ml,6,yes',
   ].join('\r\n') + '\r\n';
 }

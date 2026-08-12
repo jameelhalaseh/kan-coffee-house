@@ -16,7 +16,11 @@ const gate = [requireSession, requireAdmin];
 
 const NVIDIA_BASE = process.env.NVIDIA_BASE_URL || 'https://integrate.api.nvidia.com/v1';
 const NVIDIA_MODEL = process.env.NVIDIA_MODEL || 'meta/llama-3.3-70b-instruct';
-const LOW_STOCK_DEFAULT = Number(process.env.AI_LOW_STOCK_THRESHOLD) || 5;
+// null = use each product's own low_at. An env value overrides every product, which is why
+// it is not a number by default any more.
+const LOW_STOCK_DEFAULT = Number.isFinite(Number(process.env.AI_LOW_STOCK_THRESHOLD))
+  && String(process.env.AI_LOW_STOCK_THRESHOLD || '').trim() !== ''
+  ? Number(process.env.AI_LOW_STOCK_THRESHOLD) : null;
 
 // ── Data gathering (shared by /insights and the chat system prompt) ─────────────
 // No expiry dimension: spirits, wine and beer do not carry a use-by date, so the alert was
@@ -25,10 +29,17 @@ async function gatherInsights({ lowThreshold = LOW_STOCK_DEFAULT } = {}) {
   const [low, dead, top] = await Promise.all([
     // Products at/under the reorder threshold.
     db.query(
-      `select id, barcode, name, cat, stock, unit from products
-        where active and coalesce(stock,0) <= $1
-        order by stock asc, name limit 100`,
-      [lowThreshold]
+      // Each product carries its own reorder point (migration 0011). lowThreshold is an
+      // OVERRIDE — set by ?threshold= or AI_LOW_STOCK_THRESHOLD — for when a question asks
+      // about a specific level rather than about what the shop itself considers low.
+      lowThreshold == null
+        ? `select id, barcode, name, cat, stock, unit, coalesce(low_at,5) as low_at from products
+            where active and coalesce(stock,0) <= coalesce(low_at,5)
+            order by (coalesce(stock,0) - coalesce(low_at,5)) asc, name limit 100`
+        : `select id, barcode, name, cat, stock, unit, coalesce(low_at,5) as low_at from products
+            where active and coalesce(stock,0) <= $1
+            order by stock asc, name limit 100`,
+      lowThreshold == null ? [] : [lowThreshold]
     ),
     // Dead stock: on the shelf but not sold in the last 30 days.
     db.query(

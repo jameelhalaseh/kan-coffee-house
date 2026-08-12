@@ -7,12 +7,28 @@ const db = require('../db');
 const { requireSession, requireAdmin, requireView } = require('../auth');
 const { fail, dbError } = require('../validate');
 
+// Label size ('750ml', '1L'). Free text on purpose — the form offers presets but a 1.75L
+// handle and a 200ml miniature are both real stock. Capped and trimmed; blank becomes NULL
+// so "no size recorded" is one value rather than a mix of null and ''.
+const cleanSize = (v) => {
+  const s = String(v ?? '').trim().slice(0, 24);
+  return s === '' ? null : s;
+};
+
+// Reorder point. Negative would mean "never warn", which is what active=false is for, and a
+// non-number must not silently become 0 — that would put the product one sale away from a
+// permanent low-stock warning. Anything unusable falls back to the old global default of 5.
+const lowAt = (v) => {
+  const n = Number(v);
+  return Number.isFinite(n) && n >= 0 ? n : 5;
+};
+
 // ── List ──────────────────────────────────────────────────────────────────────
 // GET /api/products → all active products (catalogue for the sales + inventory screens).
 router.get('/products', requireSession, async (req, res, next) => {
   try {
     const { rows } = await db.query(
-      'select id, barcode, name, price, cat, cost, stock, unit, active from products order by name'
+      'select id, barcode, name, price, cat, cost, stock, unit, size, low_at, active from products order by name'
     );
     res.json(rows);
   } catch (e) { next(e); }
@@ -31,7 +47,7 @@ router.get('/products/barcode/:code', requireSession, async (req, res, next) => 
     // caller's mistake, so it is a 400. The length cap matches the import validator.
     if (code.length > 64 || !/^[\x20-\x7e]+$/.test(code)) return fail(res, 'invalid', 400);
     const { rows } = await db.query(
-      'select id, barcode, name, price, cat, cost, stock, unit, active from products where barcode = $1',
+      'select id, barcode, name, price, cat, cost, stock, unit, size, low_at, active from products where barcode = $1',
       [code]
     );
     if (!rows[0]) return fail(res, 'not_found', 404);
@@ -63,10 +79,11 @@ router.post('/products', requireSession, async (req, res, next) => {
     const stock = isAdmin ? (p.stock ?? 0) : 0;
 
     const { rows } = await db.query(
-      `insert into products (barcode, name, price, cat, cost, stock, unit, active)
-       values ($1,$2,$3,$4,$5,$6,$7,$8)
-       returning id, barcode, name, price, cat, cost, stock, unit, active`,
-      [barcode, name, price, p.cat ?? null, cost, stock, p.unit === 'kg' ? 'kg' : 'ea', isAdmin]
+      `insert into products (barcode, name, price, cat, cost, stock, unit, size, low_at, active)
+       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+       returning id, barcode, name, price, cat, cost, stock, unit, size, low_at, active`,
+      [barcode, name, price, p.cat ?? null, cost, stock, p.unit === 'kg' ? 'kg' : 'ea',
+       cleanSize(p.size), lowAt(p.low_at), isAdmin]
     );
 
     // Every catalogue addition is attributable, whoever made it.
@@ -125,9 +142,10 @@ router.put('/products/:id', requireSession, async (req, res, next) => {
     await client.query(
       `update products set
          barcode = $1, name = $2, price = $3, cat = $4, cost = $5, stock = $6,
-         unit = $7, active = coalesce($8, active), updated_at = now()
-       where id = $9`,
-      [barcode, name, p.price ?? 0, p.cat ?? null, p.cost ?? 0, p.stock ?? 0, p.unit === 'kg' ? 'kg' : 'ea', p.active ?? null, req.params.id]
+         unit = $7, size = $8, low_at = $9, active = coalesce($10, active), updated_at = now()
+       where id = $11`,
+      [barcode, name, p.price ?? 0, p.cat ?? null, p.cost ?? 0, p.stock ?? 0, p.unit === 'kg' ? 'kg' : 'ea',
+       cleanSize(p.size), lowAt(p.low_at), p.active ?? null, req.params.id]
     );
 
     const newStock = Number(p.stock ?? 0);
@@ -261,17 +279,19 @@ router.post('/products/import', requireSession, requireAdmin, async (req, res, n
           await client.query(
             `update products set
                name = $1, price = $2, cat = $3, cost = $4, stock = $5,
-               unit = $6, active = $7, updated_at = now()
-             where id = $8`,
-            [it.name, it.price, it.cat, it.cost, it.stock, it.unit, it.active, prev.id]
+               unit = $6, size = $7, low_at = $8, active = $9, updated_at = now()
+             where id = $10`,
+            [it.name, it.price, it.cat, it.cost, it.stock, it.unit,
+             cleanSize(it.size), lowAt(it.low_at), it.active, prev.id]
           );
           id = prev.id;
           updated++;
         } else {
           const ins = await client.query(
-            `insert into products (barcode, name, price, cat, cost, stock, unit, active)
-             values ($1,$2,$3,$4,$5,$6,$7,$8) returning id`,
-            [it.barcode, it.name, it.price, it.cat, it.cost, it.stock, it.unit, it.active]
+            `insert into products (barcode, name, price, cat, cost, stock, unit, size, low_at, active)
+             values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) returning id`,
+            [it.barcode, it.name, it.price, it.cat, it.cost, it.stock, it.unit,
+             cleanSize(it.size), lowAt(it.low_at), it.active]
           );
           id = ins.rows[0].id;
           created++;
@@ -285,9 +305,10 @@ router.post('/products/import', requireSession, requireAdmin, async (req, res, n
         );
       } else {
         const { rows } = await client.query(
-          `insert into products (barcode, name, price, cat, cost, stock, unit, active)
-           values ($1,$2,$3,$4,$5,$6,$7,$8) returning id`,
-          [it.barcode, it.name, it.price, it.cat, it.cost, it.stock, it.unit, it.active]
+          `insert into products (barcode, name, price, cat, cost, stock, unit, size, low_at, active)
+           values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) returning id`,
+          [it.barcode, it.name, it.price, it.cat, it.cost, it.stock, it.unit,
+           cleanSize(it.size), lowAt(it.low_at), it.active]
         );
         created++;
         await client.query(

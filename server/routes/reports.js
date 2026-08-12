@@ -137,16 +137,25 @@ router.get('/reports/abc', ...gate, async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
-// GET /api/reports/low-stock?threshold=5 → products at/under the threshold (restock list).
+// GET /api/reports/low-stock → products at or under THEIR OWN reorder point (restock list).
+//
+// Each product carries low_at (migration 0011), so the crate-a-day beer and the one-bottle-a
+// -month arak no longer share a threshold. ?threshold=N still works and now means "override
+// every product's own setting with this number", which is what the AI insights route wants
+// when a question asks about a specific level — it is no longer the only way to ask.
+//
+// Ordering is by how far under the line a product is, not by raw stock: 0 of 12 needs
+// attention before 4 of 5, and sorting by stock alone buried it.
 router.get('/reports/low-stock', ...gate, async (req, res, next) => {
   try {
-    let threshold = Number(req.query.threshold);
-    if (!Number.isFinite(threshold)) threshold = 5;
+    const override = Number(req.query.threshold);
+    const useOverride = Number.isFinite(override);
     const { rows } = await db.query(
-      `select id, barcode, name, cat, stock from products
-        where active and coalesce(stock,0) <= $1
-        order by stock asc, name`,
-      [threshold]
+      `select id, barcode, name, cat, stock, coalesce(low_at,5) as low_at
+         from products
+        where active and coalesce(stock,0) <= ${useOverride ? '$1' : 'coalesce(low_at,5)'}
+        order by (coalesce(stock,0) - coalesce(low_at,5)) asc, stock asc, name`,
+      useOverride ? [override] : []
     );
     res.json(rows);
   } catch (e) { next(e); }

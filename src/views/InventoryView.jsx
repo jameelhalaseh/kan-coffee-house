@@ -69,11 +69,18 @@ function InventoryView({ isAdmin, notify }) {
           <tbody>
             {rows.map((p) => (
               <tr key={p.id} style={{ borderTop: `1px solid ${C.line}` }}>
-                <td style={td}>{p.name}</td>
+                <td style={td}>{p.name}{p.size ? <span style={{ color: C.dim }}> · {p.size}</span> : ''}</td>
                 <td style={{ ...td, color: C.dim, fontFamily: 'monospace' }}>{p.barcode || '—'}</td>
                 <td style={{ ...td, color: C.dim }}>{p.cat || '—'}</td>
                 <td style={{ ...td, textAlign: 'right' }}>{money(p.price)}</td>
-                <td style={{ ...td, textAlign: 'right', color: Number(p.stock) <= 5 ? C.red : C.text }}>{Number(p.stock)}</td>
+                {/* Red against THIS product's reorder point, not a shop-wide 5. The point
+                    itself is shown when stock is under it, so the number explains itself. */}
+                <td style={{ ...td, textAlign: 'right', color: Number(p.stock) <= Number(p.low_at ?? 5) ? C.red : C.text }}>
+                  {Number(p.stock)}
+                  {Number(p.stock) <= Number(p.low_at ?? 5) && (
+                    <span style={{ color: C.dim, fontSize: 12 }}> / {Number(p.low_at ?? 5)}</span>
+                  )}
+                </td>
                 <td style={{ ...td, textAlign: 'end', whiteSpace: 'nowrap' }}>
                   <button onClick={() => setEditing(p)} style={S.btnRow}>{ARABIC ? 'تعديل' : 'Edit'}</button>
                   {isAdmin && <button onClick={() => remove(p)} style={{ ...S.btnRow, color: C.red, marginInlineStart: 8 }}>{ARABIC ? 'حذف' : 'Del'}</button>}

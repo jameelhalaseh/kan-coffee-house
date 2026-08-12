@@ -73,8 +73,8 @@ function ImportModal({ onClose, onImported, notify }) {
 
         <div style={{ fontSize: 13, color: C.dim, lineHeight: 1.5 }}>
           {ARABIC
-            ? 'الأعمدة: barcode, name, price, cost, stock, cat, unit, active — الاسم فقط إلزامي.'
-            : 'Columns: barcode, name, price, cost, stock, cat, unit, active — only name is required.'}
+            ? 'الأعمدة: barcode, name, price, cost, stock, cat, size, low_at, active — الاسم فقط إلزامي.'
+            : 'Columns: barcode, name, price, cost, stock, cat, size, low_at, active — only name is required.'}
           {' '}
           <button type="button" onClick={downloadTemplate}
             style={{ background: 'none', border: 'none', padding: 0, color: C.accent, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', fontSize: 13, textDecoration: 'underline' }}>

@@ -34,7 +34,7 @@ function NotificationsBell() {
   // are out of stock, sell the last one and it never says so. Refetch on mount AND every
   // time the panel is opened — opening it is exactly the moment the number has to be true.
   const refresh = useCallback(() => {
-    api.get('/reports/low-stock?threshold=5').then(setLow).catch(() => {});
+    api.get('/reports/low-stock').then(setLow).catch(() => {});
   }, []);
   useEffect(() => { refresh(); }, [refresh]);
   const toggle = () => setOpen((o) => { if (!o) refresh(); return !o; });
