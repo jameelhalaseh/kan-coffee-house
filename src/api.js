@@ -71,7 +71,10 @@ const realApi = {
   post: (p, b) => req('POST', p, b),
   put: (p, b) => req('PUT', p, b),
   patch: (p, b) => req('PATCH', p, b),
-  del: (p) => req('DELETE', p),
+  // DELETE carries an optional body: voiding an order (DELETE /orders/:id) records a
+  // void_reason, which the server reads from req.body. Existing callers pass nothing and are
+  // unaffected — `undefined` sends no body at all.
+  del: (p, b) => req('DELETE', p, b),
   setToken,
   getToken,
   setOnSessionExpired,

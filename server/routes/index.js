@@ -22,4 +22,21 @@ router.use('/', require('./timeclock'));
 router.use('/', require('./ai'));
 router.use('/', require('./jofotara'));   // Jordan e-invoicing (فوترة) submission
 
+// ── Multi-store reporting module (reporting/) ─────────────────────────────────
+// Mounted LAST, on purpose. The grocery reports above own the one-segment paths
+// (/reports/summary, /reports/zreport, …); this module's routes are two-segment and
+// store-scoped (/reports/:floor/sales), so nothing overlaps — and mounting last means that
+// if a path ever did collide, the incumbent keeps it rather than being shadowed.
+//
+// The session middleware is attached at '/reports' rather than '/', so it can only ever
+// affect report paths. Attaching it at '/' would turn every unmatched /api/* request into a
+// 401 instead of the 404 the error handler returns today.
+//
+// The module enforces its own two grants internally (reports / reports:edit, admins bypass);
+// requireSession here only populates req.user for it to read.
+router.use('/reports', requireSession);
+router.use('/', require('../../reporting/api').createReportingRouter(
+  require('../../reporting/pgRepo').createPgRepo(require('../db'))
+));
+
 module.exports = router;

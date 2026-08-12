@@ -26,6 +26,15 @@ export const CLIENT = {
     invoicePrefix: "LQ",
     // Seller identity printed on the receipt header.
     seller: { name: "Liquor Store", location: "Amman, Jordan", taxNo: "1234567" },
+    // Optional legal line at the foot of the bill, e.g. the Jordanian invoicing-regulation
+    // declaration ("صدرت هذه الفاتورة وفق أحكام المادة 5 من نظام تنظيم شؤون الفوترة").
+    //
+    // EMPTY ON PURPOSE. That sentence is a legal statement about THIS business — which
+    // regulation it invoices under — so it is the owner's to assert, not something to be
+    // filled in on their behalf. Set it here and it appears on the bill view; leave it blank
+    // and the line is not rendered at all.
+    legalNote: "",
+    legalNoteAr: "",
   },
 };
 
@@ -54,13 +63,18 @@ export const BILL = CLIENT.bill;
 export const SELLER = CLIENT.bill.seller;
 
 // Nav views available in this build. `reports` is server-enforced (allowed_views).
-export const VIEWS = ["sales", "inventory", "receive", "history", "reports", "assistant", "settings"];
+// "storereports" is the financial reporting module (reporting/): invoice-level sales, the
+// expense ledger, profit & loss and receipts, with an Excel export. Kept separate from
+// "reports" — which is the operational view (top products, ABC, dead stock, Z-report) — so
+// neither page has to be two things at once. It rides on the same `reports` grant.
+export const VIEWS = ["sales", "inventory", "receive", "history", "reports", "storereports", "assistant", "settings"];
 export const VIEW_LABELS = {
   sales: ARABIC ? "البيع" : "Sales",
   inventory: ARABIC ? "المخزون" : "Inventory",
   receive: ARABIC ? "استلام" : "Receive",
   history: ARABIC ? "السجل" : "History",
   reports: ARABIC ? "التقارير" : "Reports",
+  storereports: ARABIC ? "المالية" : "Financials",
   assistant: ARABIC ? "المساعد الذكي" : "AI Assistant",
   settings: ARABIC ? "الإعدادات" : "Settings",
 };

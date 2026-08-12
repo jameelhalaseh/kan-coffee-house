@@ -3,7 +3,14 @@
 import { STORE_NAME, ARABIC, BILL, SELLER, TAX_RATE } from './client.config';
 import { escapeHtml } from './lib';
 
-function printReceipt(sale) {
+// Build the receipt as { body, css } rather than one HTML blob.
+//
+// TWO printers consume this: the browser's print dialog (which wants a whole document) and
+// the thermal path in src/lib/thermalPrinter.js, which rasterises a body + css into ESC/POS
+// and can also kick the cash drawer. They must render the SAME receipt — a reprint that
+// differs from the original is a second version of a tax document — so the markup is built
+// once here and both callers wrap it.
+function buildReceipt(sale) {
   // One line per item: NAME on the left, what it cost on the right. The quantity and unit
   // price go underneath, and only when the quantity isn't 1.
   //
@@ -20,7 +27,7 @@ function printReceipt(sale) {
       <td class="amt">${(price * qty).toFixed(3)}</td></tr>`;
   }).join('');
   const thanks = ARABIC ? (BILL.footerThanksAr || BILL.footerThanks) : BILL.footerThanks;
-  const html = `<!doctype html><html><head><meta charset="utf-8"><style>
+  const css = `
     *{font-family:'Courier New',monospace;color:#000} body{width:280px;margin:0 auto;padding:8px}
     h2{text-align:center;margin:4px 0;font-size:18px} .muted{text-align:center;font-size:11px;color:#333}
     table{width:100%;border-collapse:collapse;font-size:12px;margin-top:8px}
@@ -30,7 +37,9 @@ function printReceipt(sale) {
     .amt{text-align:right;white-space:nowrap;width:1%;padding-left:8px}
     .qty{font-size:11px;color:#333;padding-left:8px}
     .tot{border-top:1px dashed #000;font-weight:bold;font-size:14px}
-    .ftr{text-align:center;margin-top:10px;font-size:12px}</style></head><body>
+    .ftr{text-align:center;margin-top:10px;font-size:12px}`;
+
+  const body = `
     <h2>${escapeHtml(SELLER.name || STORE_NAME)}</h2>
     ${SELLER.location ? `<div class="muted">${escapeHtml(SELLER.location)}</div>` : ''}
     ${SELLER.taxNo ? `<div class="muted">Tax No: ${escapeHtml(SELLER.taxNo)}</div>` : ''}
@@ -46,7 +55,15 @@ function printReceipt(sale) {
         <td class="amt">${(Number(sale.total) || 0).toFixed(3)}</td></tr>
         <tr><td colspan="2" style="font-size:11px;padding-top:4px">Paid: ${escapeHtml(sale.pay || '')}</td></tr>
       </tfoot></table>
-    <div class="ftr">${escapeHtml(thanks || '')}</div></body></html>`;
+    <div class="ftr">${escapeHtml(thanks || '')}</div>`;
+
+  return { body, css };
+}
+
+// Browser print: wrap the shared body/css in a document and hand it to the print dialog.
+function printReceipt(sale) {
+  const { body, css } = buildReceipt(sale);
+  const html = `<!doctype html><html><head><meta charset="utf-8"><style>${css}</style></head><body>${body}</body></html>`;
   const frame = document.createElement('iframe');
   frame.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0';
   document.body.appendChild(frame);
@@ -62,4 +79,4 @@ function printReceipt(sale) {
 // Success: one short high beep (scan accepted). Error: two low buzzes (unknown barcode).
 
 export default printReceipt;
-export { printReceipt };
+export { printReceipt, buildReceipt };

@@ -24,6 +24,7 @@ import InventoryView from './views/InventoryView';
 import ReceiveView from './views/ReceiveView';
 import HistoryView from './views/HistoryView';
 import ReportsView from './views/ReportsView';
+import StoreReportsView from './views/StoreReportsView';
 import SettingsView from './views/SettingsView';
 import AssistantView from './AssistantView';
 
@@ -95,6 +96,9 @@ export default function App() {
     if (v === 'sales' || v === 'settings' || isAdmin) return true;
     const views = user.allowed_views || [];
     if (v === 'receive') return views.includes('inventory') || views.includes('receive');
+    // Store Reports rides on the `reports` grant — the same one the server enforces for it.
+    // Without this it would be admin-only, since no user carries a 'storereports' view key.
+    if (v === 'storereports') return views.includes('reports');
     return views.includes(v);
   };
   const navViews = VIEWS.filter(allowed);
@@ -122,13 +126,14 @@ export default function App() {
           {view === 'receive' && allowed('receive') && <ReceiveView notify={notify} />}
           {view === 'history' && allowed('history') && <HistoryView user={user} notify={notify} />}
           {view === 'reports' && allowed('reports') && <ReportsView notify={notify} />}
+          {view === 'storereports' && allowed('storereports') && <StoreReportsView isAdmin={isAdmin} notify={notify} />}
           {view === 'assistant' && allowed('assistant') && <AssistantView notify={notify} />}
           {view === 'settings' && <SettingsView user={user} isAdmin={isAdmin} notify={notify} />}
         </div>
       </main>
       {pwOpen && <ChangePasswordModal notify={notify} onClose={() => setPwOpen(false)} />}
       {toast && (
-        <div className="toast-pop" style={{ position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)', background: toast.kind === 'red' ? C.red : toast.kind === 'green' ? C.green : C.panel2, color: toast.kind === 'info' ? C.text : C.accentText, padding: '13px 24px', borderRadius: 12, fontWeight: 700, fontSize: 15, boxShadow: '0 10px 34px rgba(0,0,0,.5)', zIndex: 1000 }}>
+        <div className="toast-pop" style={{ position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)', background: toast.kind === 'red' ? C.red : toast.kind === 'green' ? C.green : C.panel2, color: toast.kind === 'info' ? C.text : C.accentText, padding: '13px 24px', borderRadius: 12, fontWeight: 700, fontSize: 15, boxShadow: C.shadow, zIndex: 1000 }}>
           {toast.msg}
         </div>
       )}

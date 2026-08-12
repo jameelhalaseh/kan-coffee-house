@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import api from '../api';
-import { C, S } from '../theme';
+import { C, S, IS_DAY, toggleTheme } from '../theme';
 import { ARABIC, STORE_NAME, VIEW_LABELS, toggleLang } from '../client.config';
 
-const VIEW_ICONS = { sales: '🛒', inventory: '📦', receive: '📥', history: '🧾', reports: '📊', assistant: '🤖', settings: '⚙️' };
+const VIEW_ICONS = { sales: '🛒', inventory: '📦', receive: '📥', history: '🧾', reports: '📊', storereports: '📈', assistant: '🤖', settings: '⚙️' };
 
 // Clock In/Out for the logged-in employee.
 function ClockButton() {
@@ -56,7 +56,7 @@ function NotificationsBell() {
         // Fixed to the viewport, floating beside the sidebar — an absolute panel would be
         // clipped by the sidebar's own width + overflow-y:auto. Opens to the RIGHT of the
         // rail now that the rail is on the left (220px wide + 16px gap).
-        <div className="rise" style={{ position: 'fixed', left: 236, bottom: 16, width: 320, maxHeight: '70vh', overflow: 'auto', background: C.panel, border: `1px solid ${C.line}`, borderRadius: 12, padding: 14, zIndex: 1000, boxShadow: '0 12px 40px rgba(0,0,0,.55)' }}>
+        <div className="rise" style={{ position: 'fixed', left: 236, bottom: 16, width: 320, maxHeight: '70vh', overflow: 'auto', background: C.panel, border: `1px solid ${C.line}`, borderRadius: 12, padding: 14, zIndex: 1000, boxShadow: C.shadow }}>
           <div style={{ fontWeight: 800, marginBottom: 6, color: C.red }}>{ARABIC ? 'مخزون منخفض' : 'Low stock'} ({low.length})</div>
           {low.slice(0, 8).map((p) => <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, padding: '3px 0' }}><span>{p.name}</span><span style={{ color: C.red }}>{Number(p.stock)}</span></div>)}
           {!count &&<div style={{ color: C.dim, fontSize: 13 }}>{ARABIC ? 'لا تنبيهات' : 'All good'}</div>}
@@ -104,7 +104,15 @@ function Sidebar({ user, view, setView, navViews, onLogout, canSeeStock, onChang
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10, borderTop: `1px solid ${C.line}`, paddingTop: 12 }}>
         {canSeeStock && <NotificationsBell />}
         <ClockButton />
-        <button onClick={toggleLang} style={{ ...S.btnGhost, height: 56, fontSize: 16 }}>{ARABIC ? '🌐 English' : '🌐 عربي'}</button>
+        <div style={{ display: 'flex', gap: 10 }}>
+          <button onClick={toggleLang} style={{ ...S.btnGhost, flex: 1, height: 56, fontSize: 16 }}>{ARABIC ? '🌐 English' : '🌐 عربي'}</button>
+          {/* Day/night. Reloads the page — see the note in src/theme.js: the palette is read
+              at import time, so a reload is what makes every screen agree. */}
+          <button onClick={toggleTheme} title={ARABIC ? 'المظهر' : 'Theme'}
+            style={{ ...S.btnGhost, flex: '0 0 56px', height: 56, fontSize: 20 }}>
+            {IS_DAY ? '🌙' : '☀️'}
+          </button>
+        </div>
         <div style={{ fontSize: 14, color: C.dim, textAlign: 'center' }}>{user.full_name || user.username}</div>
         <button onClick={onChangePassword} style={{ ...S.btnGhost, height: 48, fontSize: 14 }}>🔑 {ARABIC ? 'كلمة المرور' : 'Password'}</button>
         <button onClick={onLogout} style={{ ...S.btnGhost, height: 56, fontSize: 16 }}>{ARABIC ? '🚪 خروج' : '🚪 Logout'}</button>

@@ -7,6 +7,7 @@ import {
 } from '../lib';
 import { HELD_KEY, PENDING_KEY, PAD_KEY, BC_NAME, DISPLAY_KEY } from '../constants';
 import printReceipt from '../receipt';
+import BillPaper, { billFromSale, PAPER } from '../components/BillPaper';
 import { beep } from '../sound';
 import { Overlay, NumPad, qtyBtn } from '../components/ui';
 import { categoryCards, inCat, CategoryGrid, CategoryHeader, catTitle } from '../components/categories';
@@ -529,26 +530,33 @@ function ReceiptModal({ sale, onClose }) {
   return (
     <Overlay onClose={onClose}>
       <div style={{ ...S.card, width: 380, display: 'flex', flexDirection: 'column', gap: 0, padding: 0, overflow: 'hidden' }}>
-        <div style={{ background: `linear-gradient(135deg, ${C.green}, #2aa872)`, color: '#0f1117', padding: '16px 20px', textAlign: 'center' }}>
+        <div style={{ background: `linear-gradient(135deg, ${C.green}, #2aa872)`, color: C.accentText, padding: '16px 20px', textAlign: 'center' }}>
           <div style={{ fontSize: 34, lineHeight: 1 }}>✓</div>
           <div style={{ fontWeight: 800, fontSize: 19, marginTop: 4 }}>{ARABIC ? 'تم الدفع' : 'Payment complete'}</div>
           <div style={{ fontSize: 13, fontWeight: 700, opacity: 0.75 }}>{ARABIC ? 'فاتورة' : 'Invoice'} #{sale.invoice_no} · {sale.date} {String(sale.time).slice(0, 5)}</div>
         </div>
-        <div style={{ padding: '14px 20px', maxHeight: '38vh', overflow: 'auto' }}>
-          {(sale.items || []).map((l, i) => (
-            <div key={i} style={{ display: 'flex', justifyContent: 'space-between', gap: 10, padding: '6px 0', borderBottom: `1px dashed ${C.line}`, fontSize: 14 }}>
-              <span style={{ minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{l.name} <span style={{ color: C.dim }}>× {l.qty}</span></span>
-              <span style={{ flexShrink: 0, fontWeight: 700 }}>{money(l.price * l.qty)}</span>
-            </div>
-          ))}
-          <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: 10, fontWeight: 800, fontSize: 19 }}>
-            <span>{ARABIC ? 'المجموع' : 'Total'}</span><span style={{ color: C.accent }}>{money(sale.total)}</span>
-          </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: 4, fontSize: 14, color: C.dim }}>
-            <span>{sale.pay === 'cash' ? (ARABIC ? '💵 نقدي' : '💵 Cash') : (ARABIC ? '💳 بطاقة' : '💳 Card')}</span>
-            {sale.change != null && sale.change >= 0 && <span style={{ color: C.green, fontWeight: 800 }}>{ARABIC ? 'الباقي' : 'Change'}: {money(sale.change)}</span>}
-          </div>
+        {/* The ACTUAL invoice, not a summary of it. Same component the Financials receipt
+            dialog uses and the same figures src/receipt.js sends to the roll — seller header,
+            tax number, per-line unit price, and the VAT extracted out of the tax-inclusive
+            prices. The cashier is looking at what the customer is about to be handed, so a
+            wrong price is caught here rather than at the door. */}
+        <div style={{ background: PAPER.bg, padding: '14px 18px', maxHeight: '52vh', overflow: 'auto' }}>
+          <BillPaper bill={billFromSale(sale)} compact />
         </div>
+
+        {/* CHANGE DUE is deliberately OUTSIDE the paper: it is not on the printed invoice, it
+            is an instruction to the cashier standing at the drawer. Keeping it on the app's
+            own surface rather than inside the document keeps that distinction honest — and it
+            is the one number that must not be missed, so it stays big. */}
+        {sale.change != null && sale.change >= 0 && (
+          <div style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+            padding: '12px 20px', background: C.panel2, borderTop: `1px solid ${C.line}`,
+          }}>
+            <span style={{ fontSize: 15, color: C.dim, fontWeight: 700 }}>{ARABIC ? 'الباقي للعميل' : 'Change due'}</span>
+            <span style={{ fontSize: 22, fontWeight: 800, color: C.green }}>{money(sale.change)}</span>
+          </div>
+        )}
         <div style={{ display: 'flex', gap: 10, padding: '0 20px 18px' }}>
           <button onClick={() => { printReceipt(sale); onClose(); }} style={{ ...S.btnGhost, flex: 1, padding: '16px', fontSize: 16, fontWeight: 800 }}>
             🖨 {ARABIC ? 'طباعة' : 'Print'}
