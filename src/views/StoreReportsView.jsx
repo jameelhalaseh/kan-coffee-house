@@ -20,6 +20,7 @@ const FLOOR = DEFAULT_FLOOR;   // single store; the API is still store-scoped
 const TABS = [
   { key: 'sales', en: 'Sales', ar: 'المبيعات', export: 'sales' },
   { key: 'discounts', en: 'Discounts', ar: 'الخصومات', export: 'discounts' },
+  { key: 'stock', en: 'Stock', ar: 'المخزون', export: 'stock' },
   { key: 'expenses', en: 'Expenses', ar: 'المصاريف', export: 'expenses' },
   { key: 'pnl', en: 'Profit & Loss', ar: 'الأرباح والخسائر', export: 'pnl' },
   { key: 'receipts', en: 'Receipts', ar: 'الفواتير', export: null },
@@ -263,6 +264,213 @@ function StoreReportsView({ isAdmin, notify }) {
   );
 }
 
+// ── Stock ─────────────────────────────────────────────────────────────────────
+//
+// The columns read left to right as the sentence a stock take actually is: this is what you
+// started with, this came in, this went out, this is what should be left, and this is what
+// the shelf says. Opening and Closing are DERIVED — the shelf count is the only measured
+// number — so a row that looks wrong is a prompt to open its movements, which is why every
+// row opens.
+function StockBody({ data, span, preset }) {
+  const [open, setOpen] = useState(null);        // product id whose movements are showing
+  const [only, setOnly] = useState('moved');     // moved | all | low | dead
+
+  const rows = (data.rows || []).filter((r) => {
+    if (only === 'all') return true;
+    if (only === 'low') return r.low || r.out;
+    if (only === 'dead') return r.dead;
+    return Number(r.sold) !== 0 || Number(r.received) !== 0 || Number(r.adjusted) !== 0;
+  });
+
+  const FILTERS = [
+    { key: 'moved', en: 'Moved', ar: 'تحرّك' },
+    { key: 'low', en: 'Low / out', ar: 'منخفض / نافد' },
+    { key: 'dead', en: 'No movement', ar: 'بدون حركة' },
+    { key: 'all', en: 'Everything', ar: 'الكل' },
+  ];
+
+  return (
+    <>
+      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+        <Stat label={ARABIC ? 'قيمة المخزون الآن' : 'Stock Value Now'} value={amt(data.totals.stockValue)} accent />
+        <Stat label={ARABIC ? 'مشتريات الفترة' : 'Purchases'} value={amt(data.totals.purchases)} />
+        <Stat label={ARABIC ? 'تكلفة المبيعات' : 'Cost of Goods Sold'} value={amt(data.totals.cogs)} />
+        <Stat label={ARABIC ? 'الربح' : 'Profit'} value={amt(data.totals.profit)} />
+        <Stat label={ARABIC ? 'قطع مباعة' : 'Units Sold'} value={String(data.totals.sold)} />
+        <Stat label={ARABIC ? 'قطع مستلمة' : 'Units Received'} value={String(data.totals.received)} />
+        <Stat label={ARABIC ? 'نافد' : 'Out of Stock'} value={String(data.kpi.outCount)} />
+        <Stat label={ARABIC ? 'منخفض' : 'Low'} value={String(data.kpi.lowCount)} />
+      </div>
+
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', margin: '4px 0' }}>
+        {FILTERS.map((f) => (
+          <button key={f.key} onClick={() => setOnly(f.key)} style={{
+            padding: '7px 14px', borderRadius: 999, fontSize: 13, fontWeight: 700, cursor: 'pointer',
+            fontFamily: 'inherit',
+            background: only === f.key ? C.accent : C.panel2,
+            color: only === f.key ? C.accentText : C.text,
+            border: `1px solid ${only === f.key ? C.accent : C.line}`,
+          }}>{L(f)}</button>
+        ))}
+        <span style={{ alignSelf: 'center', color: C.dim, fontSize: 13 }}>
+          {rows.length} / {data.rows.length} {ARABIC ? 'منتج' : 'products'}
+        </span>
+      </div>
+
+      <Table head={[ARABIC ? 'المنتج' : 'Product', ARABIC ? 'أول المدة' : 'Opening',
+        ARABIC ? 'وارد' : 'Received', ARABIC ? 'مباع' : 'Sold', ARABIC ? 'مرتجع' : 'Returned',
+        ARABIC ? 'تسوية' : 'Adjusted', ARABIC ? 'آخر المدة' : 'Closing',
+        ARABIC ? 'المخزون الآن' : 'In Stock Now', ARABIC ? 'التكلفة' : 'Unit Cost',
+        ARABIC ? 'قيمة المخزون' : 'Stock Value', ARABIC ? 'الإيراد' : 'Revenue',
+        ARABIC ? 'الربح' : 'Profit', ARABIC ? 'المورّد' : 'Supplier']}>
+        {!rows.length && <Empty><NoSales span={span} preset={preset} /></Empty>}
+        {rows.map((r) => {
+          const isOpen = open === r.id;
+          const detail = (r.receipts || []).length + (r.adjustments || []).length;
+          return (
+            <React.Fragment key={r.id}>
+              <tr onClick={() => setOpen(isOpen ? null : r.id)} style={{ cursor: 'pointer' }}>
+                <td style={td}>
+                  <span style={{ color: C.dim, marginInlineEnd: 6 }}>{isOpen ? '▾' : '▸'}</span>
+                  {r.name}{r.size ? <span style={{ color: C.dim }}> · {r.size}</span> : ''}
+                  {r.out
+                    ? <Pill color={C.red}>{ARABIC ? 'نافد' : 'OUT'}</Pill>
+                    : r.low ? <Pill color={C.red} hollow>{ARABIC ? 'منخفض' : 'LOW'}</Pill>
+                    : r.dead ? <Pill color={C.dim} hollow>{ARABIC ? 'راكد' : 'NO MOVEMENT'}</Pill> : null}
+                </td>
+                <td style={td}>{r.opening}</td>
+                <td style={{ ...td, color: Number(r.received) ? C.green : C.dim }}>{r.received}</td>
+                <td style={td}>{r.sold}</td>
+                <td style={{ ...td, color: Number(r.returned) ? C.red : C.dim }}>{r.returned}</td>
+                {/* A manual correction is the movement with no paperwork behind it, so it is
+                    the one worth colouring: it is where shrinkage gets written off. */}
+                <td style={{ ...td, color: Number(r.adjusted) ? C.red : C.dim, fontWeight: Number(r.adjusted) ? 800 : 400 }}>
+                  {Number(r.adjusted) > 0 ? `+${r.adjusted}` : r.adjusted}
+                </td>
+                <td style={{ ...td, fontWeight: 800 }}>{r.closing}</td>
+                <td style={td}>{r.stockNow} <span style={{ color: C.dim, fontSize: 12 }}>/ {r.lowAt}</span></td>
+                <td style={td}>{r.unitCost}</td>
+                <td style={td}>{r.stockValue}</td>
+                <td style={td}>{r.revenue}</td>
+                <td style={{ ...td, color: Number(r.profit) < 0 ? C.red : C.text }}>{r.profit}</td>
+                <td style={{ ...td, color: C.dim, fontSize: 12 }}>
+                  {r.suppliers && r.suppliers.length ? r.suppliers.join(', ') : '—'}
+                </td>
+              </tr>
+              {isOpen && (
+                <tr>
+                  <td colSpan={13} style={{ ...td, background: C.panel2, padding: '10px 14px' }}>
+                    <StockDetail row={r} count={detail} />
+                  </td>
+                </tr>
+              )}
+            </React.Fragment>
+          );
+        })}
+        {!!rows.length && (
+          <tr style={TOTAL_ROW}>
+            <td style={td}>TOTAL</td>
+            <td style={td}>{data.totals.opening}</td>
+            <td style={td}>{data.totals.received}</td>
+            <td style={td}>{data.totals.sold}</td>
+            <td style={td}>{data.totals.returned}</td>
+            <td style={td}>{data.totals.adjusted}</td>
+            <td style={td}>{data.totals.closing}</td>
+            <td style={td}>{data.totals.stockNow}</td>
+            <td style={td} />
+            <td style={td}>{data.totals.stockValue}</td>
+            <td style={td}>{data.totals.revenue}</td>
+            <td style={td}>{data.totals.profit}</td>
+            <td style={td} />
+          </tr>
+        )}
+      </Table>
+
+      {/* Movements against a product that is no longer in the catalogue. Dropping them
+          silently would make the totals disagree with the sales report for no visible
+          reason. */}
+      {!!(data.orphans || []).length && (
+        <div style={{ border: `1px solid ${C.red}`, borderRadius: 12, padding: 12, fontSize: 13 }}>
+          <div style={{ fontWeight: 800, color: C.red, marginBottom: 6 }}>
+            ⚠ {ARABIC ? 'حركة على منتجات محذوفة' : 'Movement on products no longer in the catalogue'}
+          </div>
+          {data.orphans.map((o) => (
+            <div key={o.id} style={{ color: C.dim }}>
+              #{o.id} — {ARABIC ? 'مباع' : 'sold'} {o.sold}, {ARABIC ? 'وارد' : 'received'} {o.received}
+            </div>
+          ))}
+        </div>
+      )}
+    </>
+  );
+}
+
+const Pill = ({ color, hollow, children }) => (
+  <span style={{
+    marginInlineStart: 8, fontSize: 10, fontWeight: 800, borderRadius: 8, padding: '2px 7px',
+    whiteSpace: 'nowrap',
+    color: hollow ? color : C.accentText, background: hollow ? 'transparent' : color,
+    border: `1px solid ${color}`,
+  }}>{children}</span>
+);
+
+// The evidence under one product's row: every delivery and every correction, dated, with the
+// supplier or the person who made it. Sales are not itemised here — they are in the Sales and
+// Receipts tabs, invoice by invoice, and repeating 400 of them per product would bury the two
+// rows that actually explain a discrepancy.
+function StockDetail({ row, count }) {
+  const cell = { padding: '5px 10px', borderBottom: `1px solid ${C.line}`, fontSize: 12.5 };
+  if (!count) {
+    return (
+      <span style={{ color: C.dim, fontSize: 13 }}>
+        {ARABIC
+          ? 'لا استلام ولا تسويات في هذه الفترة — الحركة كلها بيع.'
+          : 'No deliveries or corrections in this period — every movement was a sale.'}
+      </span>
+    );
+  }
+  return (
+    <table style={{ width: '100%', borderCollapse: 'collapse', fontVariantNumeric: 'tabular-nums' }}>
+      <thead><tr style={{ color: C.dim, textAlign: ARABIC ? 'right' : 'left' }}>
+        <th style={cell}>{ARABIC ? 'التاريخ' : 'Date'}</th>
+        <th style={cell}>{ARABIC ? 'الحركة' : 'Movement'}</th>
+        <th style={cell}>{ARABIC ? 'المورّد / بواسطة' : 'Supplier / By'}</th>
+        <th style={cell}>{ARABIC ? 'الكمية' : 'Qty'}</th>
+        <th style={cell}>{ARABIC ? 'سعر الوحدة' : 'Unit Cost'}</th>
+        <th style={cell}>{ARABIC ? 'الإجمالي' : 'Total Cost'}</th>
+        <th style={cell}>{ARABIC ? 'من ← إلى' : 'From → To'}</th>
+      </tr></thead>
+      <tbody>
+        {(row.receipts || []).map((b, i) => (
+          <tr key={`r${i}`}>
+            <td style={cell}>{b.date}</td>
+            <td style={{ ...cell, color: C.green, fontWeight: 700 }}>{ARABIC ? 'استلام' : 'Received'}</td>
+            <td style={cell}>{b.supplier || '—'}</td>
+            <td style={cell}>+{b.qty}</td>
+            <td style={cell}>{b.unitCost}</td>
+            <td style={cell}>{b.lineCost}</td>
+            <td style={cell} />
+          </tr>
+        ))}
+        {(row.adjustments || []).map((a, i) => (
+          <tr key={`a${i}`}>
+            <td style={cell}>{a.date}</td>
+            <td style={{ ...cell, color: C.red, fontWeight: 700 }}>{ADJUST_LABEL(a.kind)}</td>
+            <td style={cell}>{a.by || '—'}</td>
+            <td style={cell}>{Number(a.delta) > 0 ? `+${a.delta}` : a.delta}</td>
+            <td style={cell} /><td style={cell} />
+            <td style={cell}>{a.fromQty} → {a.toQty}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+const ADJUST_LABEL = (kind) => (ARABIC
+  ? ({ adjust: 'تسوية يدوية', create: 'إنشاء منتج', import: 'استيراد' }[kind] || kind)
+  : ({ adjust: 'Manual correction', create: 'Product created', import: 'Bulk import' }[kind] || kind));
+
 function Table({ head, children }) {
   return (
     <div style={{ overflowX: 'auto', border: `1px solid ${C.line}`, borderRadius: 12 }}>
@@ -401,6 +609,8 @@ function Body({ tab, data, isAdmin, onDelete, span, preset, receiptDate, onJump,
       </>
     );
   }
+
+  if (tab === 'stock') return <StockBody data={data} span={span} preset={preset} />;
 
   if (tab === 'expenses') {
     return (

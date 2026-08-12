@@ -33,7 +33,16 @@ const fmt = (n, floor) => {
 };
 
 // Keys whose value is a COUNT, not an amount. "6 items" must not be serialised as "6.000".
-const COUNT_KEYS = new Set(['itemsSold', 'qty', 'orders']);
+// Keys that hold a COUNT OF THINGS rather than an amount of money. Bottles are not a
+// 3-decimal currency: a stock report reading "12.000" in the Closing column invites the
+// reader to look for a precision that does not exist, and makes a quantity and a price
+// indistinguishable at a glance in a table that puts them side by side.
+const COUNT_KEYS = new Set([
+  'itemsSold', 'qty', 'orders',
+  // §5.7 stock quantities
+  'opening', 'received', 'sold', 'returned', 'adjusted', 'closing', 'stockNow',
+  'lowAt', 'delta', 'fromQty', 'toQty',
+]);
 
 /**
  * Serialise a report for JSON at the store's precision.

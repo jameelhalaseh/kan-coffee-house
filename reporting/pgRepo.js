@@ -18,6 +18,7 @@
 const { d } = require('./decimal');
 const { FLOORS } = require('./stores');
 const { ordersTable } = require('../server/floors');
+const { tradingDate } = require('../server/tz');
 
 // Build "and date >= $n" / "and date <= $n" only for the bounds that are set.
 function windowClause(period, params, col = 'date') {
@@ -58,6 +59,57 @@ function createPgRepo(db) {
       const params = [floor];
       const { rows } = await q(
         `select ${ORDER_COLS} from ${table} where floor = $1${windowClause(period, params)}`, params);
+      return rows;
+    },
+
+    // ── Stock ─────────────────────────────────────────────────────────────────
+    // The catalogue as it stands NOW. products.stock is the authority on how many bottles
+    // are on the shelf; every historical figure in the stock report is derived by walking
+    // back from it, never by adding up movements from zero. The shop's opening balances
+    // were seeded straight into the column years of movements ago and were never logged,
+    // so "sum the log from the beginning" would report every product as deeply negative.
+    async stockProducts() {
+      const { rows } = await q(
+        `select id, barcode, name, cat, size, cost, price, stock, low_at, active
+           from products order by name`);
+      return rows;
+    },
+
+    // Deliveries. `date` is the LOCAL trading date so it lines up with the same YYYY-MM-DD
+    // text the sales side filters on — a delivery booked at 01:30 Amman belongs to that
+    // calendar day, not to the UTC one before it.
+    //
+    // Cost is per unit as entered on the Receive screen; lineCost is what the shop paid.
+    async stockReceipts(from) {
+      const params = [];
+      let where = '';
+      if (from) { params.push(from); where = ` where ${tradingDate('b.received_at')} >= $${params.length}`; }
+      const { rows } = await q(
+        `select b.id, b.product_id, b.qty, b.cost,
+                ${tradingDate('b.received_at')}::text as date,
+                b.received_at,
+                coalesce(s.name, '') as supplier
+           from batches b
+           left join suppliers s on s.id = b.supplier_id${where}
+          order by b.received_at, b.id`, params);
+      return rows;
+    },
+
+    // Everything else that moved stock: manual corrections, catalogue creation, imports.
+    //
+    // Sales, refunds, voids and deliveries are DELIBERATELY excluded here even though they
+    // write log rows too. Those events are read from orders_main and batches, which are the
+    // records that carry the money; counting them from both places would double every
+    // movement in the report.
+    async stockAdjustments(from) {
+      const params = [];
+      let where = "where kind in ('adjust','create','import')";
+      if (from) { params.push(from); where += ` and ${tradingDate('created_at')} >= $${params.length}`; }
+      const { rows } = await q(
+        `select item_id, kind, old_qty, new_qty, changed_by,
+                ${tradingDate('created_at')}::text as date, created_at
+           from stock_log ${where}
+          order by created_at, id`, params);
       return rows;
     },
 

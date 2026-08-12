@@ -11,6 +11,7 @@ const express = require('express');
 const { store, FLOORS } = require('./stores');
 const { resolvePeriod } = require('./period');
 const R = require('./reports');
+const S = require('./stock');
 const { serialize } = require('./money');
 const X = require('./export');
 const {
@@ -50,6 +51,27 @@ function createReportingRouter(repo) {
 
   // Every discounted LINE in the period, with the reason it was given. Same view grant as
   // the other reports — a discount log is revenue data.
+  // Stock — opening balance, every delivery, everything sold, and what is left.
+  //
+  // The orders read is deliberately UNBOUNDED at the end: the closing balance is reached by
+  // walking back from today's shelf count, so movements AFTER the period are needed to undo
+  // them. Passing the period straight through would silently report today's stock as the
+  // closing balance of a period that ended last month.
+  router.get('/reports/:floor/stock', ...view, async (req, res, next) => {
+    try {
+      const s = scopeOf(req, res); if (!s) return;
+      const since = { from: s.period.from, to: '' };
+      const [products, orders, receipts, adjustments] = await Promise.all([
+        repo.stockProducts(),
+        repo.orders(s.floor, since),
+        repo.stockReceipts(s.period.from),
+        repo.stockAdjustments(s.period.from),
+      ]);
+      res.json(send(s.floor,
+        S.stockReport(products, orders, receipts, adjustments, s.floor, s.period)));
+    } catch (e) { next(e); }
+  });
+
   router.get('/reports/:floor/discounts', ...view, async (req, res, next) => {
     try {
       const s = scopeOf(req, res); if (!s) return;
@@ -152,6 +174,17 @@ function createReportingRouter(repo) {
       switch (req.params.report) {
         case 'sales':
           sheets = [X.salesSheet(await repo.orders(floor, period), floor, period)]; break;
+        case 'stock': {
+          const since = { from: period.from, to: '' };
+          const [products, orders, receipts, adjustments] = await Promise.all([
+            repo.stockProducts(),
+            repo.orders(floor, since),
+            repo.stockReceipts(period.from),
+            repo.stockAdjustments(period.from),
+          ]);
+          sheets = X.stockSheets(products, orders, receipts, adjustments, floor, period);
+          break;
+        }
         case 'discounts':
           sheets = [X.discountsSheet(await repo.orders(floor, period), floor, period)]; break;
         case 'expenses':

@@ -467,3 +467,146 @@ describe('discounts report', () => {
     expect((await request(viewer()).get('/api/reports/main/discounts?period=all')).status).toBe(200);
   });
 });
+
+// ── Stock report over the real schema ─────────────────────────────────────────
+// The pure suite proves the arithmetic. This proves the three joins it depends on: that a
+// delivery finds its supplier's NAME, that a timestamptz becomes the right Amman trading
+// date, and that the log query hands over corrections only.
+describe('stock report over Postgres', () => {
+  const appAs = (user) => {
+    const app = express();
+    app.use(express.json());
+    app.use((req, _res, next) => { req.user = user; next(); });
+    app.use('/api', createReportingRouter(repo));
+    return app;
+  };
+  const admin = () => appAs({ username: 'root', role: 'admin' });
+
+  let productId;
+  let supplierId;
+
+  beforeEach(async () => {
+    await pool.query('delete from batches');
+    await pool.query('delete from stock_log');
+    await pool.query('delete from suppliers');
+    await pool.query('delete from products');
+    const s = await pool.query("insert into suppliers (name) values ('Amman Drinks') returning id");
+    supplierId = s.rows[0].id;
+    const p = await pool.query(
+      `insert into products (barcode, name, cat, size, cost, price, stock, low_at, active)
+       values ('629','Arak','Arak','750ml',6,10,12,5,true) returning id`);
+    productId = p.rows[0].id;
+  });
+
+  const AUGQ = 'period=custom&from=2026-08-01&to=2026-08-31';
+  const stock = () => request(admin()).get(`/api/reports/main/stock?${AUGQ}`);
+
+  test('a delivery arrives with its supplier name, quantity and cost', async () => {
+    await pool.query(
+      `insert into batches (product_id, supplier_id, qty, cost, received_at)
+       values ($1,$2,10,6,'2026-08-03T09:00:00Z')`, [productId, supplierId]);
+
+    const res = await stock();
+    expect(res.status).toBe(200);
+    const row = res.body.rows.find((r) => r.id === productId);
+    expect(row.received).toBe('10');
+    expect(row.suppliers).toEqual(['Amman Drinks']);
+    expect(row.receipts[0]).toMatchObject({
+      date: '2026-08-03', supplier: 'Amman Drinks', qty: '10',
+      unitCost: '6.000', lineCost: '60.000',
+    });
+    expect(row.purchases).toBe('60.000');
+  });
+
+  test('a delivery keeps its supplier name after the supplier row is deleted', async () => {
+    // The join is LEFT: losing a supplier must not lose the delivery, because the stock
+    // arrived whether or not the shop still trades with whoever sent it.
+    await pool.query(
+      `insert into batches (product_id, supplier_id, qty, cost, received_at)
+       values ($1,$2,10,6,'2026-08-03T09:00:00Z')`, [productId, supplierId]);
+    await pool.query('update batches set supplier_id = null');
+
+    const row = (await stock()).body.rows.find((r) => r.id === productId);
+    expect(row.received).toBe('10');
+    expect(row.receipts[0].supplier).toBe('');
+  });
+
+  test('a delivery just after midnight Amman belongs to that Amman day', async () => {
+    // 2026-08-03T22:30Z is 01:30 on the 4th in Amman. Reported under the UTC date it would
+    // land in the wrong month at a month boundary, and reconcile against the wrong opening.
+    await pool.query(
+      `insert into batches (product_id, supplier_id, qty, cost, received_at)
+       values ($1,$2,4,6,'2026-08-03T22:30:00Z')`, [productId, supplierId]);
+    const row = (await stock()).body.rows.find((r) => r.id === productId);
+    expect(row.receipts[0].date).toBe('2026-08-04');
+  });
+
+  test('the log query hands over corrections only, never sales or restocks', async () => {
+    // Every one of these is a real row this app writes. Only the 'adjust' is this report's
+    // to count; the others are read from orders_main and batches instead.
+    for (const [kind, oldQ, newQ] of [['adjust', 12, 11], ['sale', 13, 12], ['restock', 3, 13]]) {
+      await pool.query(
+        `insert into stock_log (kind,item_id,name,old_qty,new_qty,changed_by,created_at)
+         values ($1,$2,'Arak',$3,$4,'owner','2026-08-06T09:00:00Z')`,
+        [kind, String(productId), oldQ, newQ]);
+    }
+    const row = (await stock()).body.rows.find((r) => r.id === productId);
+    expect(row.adjusted).toBe('-1');
+    expect(row.adjustments).toHaveLength(1);
+    expect(row.adjustments[0]).toMatchObject({ kind: 'adjust', by: 'owner', fromQty: '12', toQty: '11' });
+  });
+
+  test('the balance ties to the shelf count through a sale and a delivery', async () => {
+    await sale({ id: 's1', invoice_no: 1, date: '2026-08-05', total: '30',
+      items: [{ id: productId, name: 'Arak', qty: 3, price: '10' }] });
+    await pool.query(
+      `insert into batches (product_id, supplier_id, qty, cost, received_at)
+       values ($1,$2,10,6,'2026-08-03T09:00:00Z')`, [productId, supplierId]);
+
+    const row = (await stock()).body.rows.find((r) => r.id === productId);
+    expect(row.opening).toBe('5');
+    expect(row.received).toBe('10');
+    expect(row.sold).toBe('3');
+    expect(row.closing).toBe('12');
+    expect(row.stockNow).toBe('12');
+    expect(row.revenue).toBe('30.000');
+    expect(row.cogs).toBe('18.000');
+    expect(row.profit).toBe('12.000');
+  });
+
+  test('a sale after the period is undone to reach the closing balance', async () => {
+    await sale({ id: 's1', invoice_no: 1, date: '2026-09-20', total: '40',
+      items: [{ id: productId, name: 'Arak', qty: 4, price: '10' }] });
+    const row = (await stock()).body.rows.find((r) => r.id === productId);
+    expect(row.sold).toBe('0');         // it is not August's sale…
+    expect(row.closing).toBe('16');     // …but it must still be undone
+    expect(row.stockNow).toBe('12');
+  });
+
+  test('quantities serialise as counts, not padded to three decimals', async () => {
+    const row = (await stock()).body.rows.find((r) => r.id === productId);
+    expect(row.stockNow).toBe('12');
+    expect(row.unitCost).toBe('6.000');   // money still is
+  });
+
+  test('the export is a real workbook with both sheets', async () => {
+    await pool.query(
+      `insert into batches (product_id, supplier_id, qty, cost, received_at)
+       values ($1,$2,10,6,'2026-08-03T09:00:00Z')`, [productId, supplierId]);
+    const res = await request(admin())
+      .get(`/api/reports/main/export/stock?${AUGQ}`)
+      .buffer().parse((r, cb) => {
+        const chunks = [];
+        r.on('data', (c) => chunks.push(c));
+        r.on('end', () => cb(null, Buffer.concat(chunks)));
+      });
+    expect(res.status).toBe(200);
+    expect(res.headers['content-disposition']).toContain('main-stock-');
+    expect(res.body.subarray(0, 2).toString()).toBe('PK');
+  });
+
+  test('a view-only user may read it', async () => {
+    const viewer = appAs({ username: 'v', allowed_views: ['reports'] });
+    expect((await request(viewer).get(`/api/reports/main/stock?${AUGQ}`)).status).toBe(200);
+  });
+});
