@@ -82,6 +82,53 @@ function salesReport(orders, floor, period) {
   return { rows: table, totals, kpi: { totalSales: sum(rows, (o) => o.total), orders: rows.length } };
 }
 
+// ── 5.1b Discounts ────────────────────────────────────────────────────────────
+//
+// One row per DISCOUNTED LINE, not per bill. A bill-level total says money was given away;
+// this says which bottle, how much, who rang it and why — which is the question actually
+// being asked when a manager opens this report.
+//
+// The reason text lives here and NOWHERE on the customer's document. "Staff friend" or
+// "damaged label" is a note between the shop and its own records; printing it on the bill
+// would hand the customer an argument at the counter and, worse, a record of who gets
+// discounts. See src/components/BillPaper.jsx, which deliberately renders the amount but
+// not the note.
+//
+// Voided bills are excluded by isSale, same as everywhere else: a discount on a sale that
+// did not happen is not a discount.
+function discountsReport(orders, floor, period) {
+  const rows = [];
+  scope(orders, floor, period)
+    .filter(isSale)
+    .sort((a, b) =>
+      strAsc(a.date, b.date) || numAsc(a.invoice_no, b.invoice_no) || strAsc(a.id, b.id))
+    .forEach((o) => {
+      (o.items || []).forEach((li) => {
+        if (!(Number(li.disc ?? 0) > 0)) return;
+        const disc = d(li.disc ?? 0);
+        rows.push({
+          date: o.date,
+          billNo: billNo(o),
+          item: li.name || '',
+          size: li.size || '',
+          qty: d(li.qty ?? 0),
+          gross: d(li.price ?? 0).mul(li.qty ?? 0),
+          disc,
+          net: d(li.price ?? 0).mul(li.qty ?? 0).sub(disc),
+          note: li.disc_note || '',
+          cashier: o.waiter || '',
+        });
+      });
+    });
+
+  return {
+    rows,
+    // Summed from the same unrounded source as the cells, per §4.
+    totals: { disc: sum(rows, (r) => r.disc), gross: sum(rows, (r) => r.gross) },
+    kpi: { discountedLines: rows.length },
+  };
+}
+
 // ── 5.2 Expenses ──────────────────────────────────────────────────────────────
 const PAYMENT_LABELS = { cheque: 'Cheque', petty_cash: 'Petty Cash' };
 const paymentLabel = (m) => PAYMENT_LABELS[m] || String(m || '');
@@ -167,11 +214,18 @@ function receiptsByDate(orders, floor, date, query = '') {
 // says "2.600" is the same sale told two ways.
 function receiptView(o) {
   if (!o) return null;
+  // `amount` is the line NET of its own discount, because that is what the line contributed
+  // to the stored total — computing it gross would make lineSum disagree with total on every
+  // discounted bill and light the "items do not add up" warning on a correct invoice.
+  // `gross` is kept so the bill view can show what the discount came off.
   const items = (o.items || []).map((li) => ({
     name: li.name,
+    size: li.size || '',
     qty: d(li.qty ?? 0),
     price: d(li.price ?? 0),
-    amount: d(li.price ?? 0).mul(li.qty ?? 0),
+    disc: d(li.disc ?? 0),
+    gross: d(li.price ?? 0).mul(li.qty ?? 0),
+    amount: d(li.price ?? 0).mul(li.qty ?? 0).sub(d(li.disc ?? 0)),
   }));
   return {
     id: o.id,
@@ -202,6 +256,6 @@ function receiptView(o) {
 }
 
 module.exports = {
-  salesReport, expensesReport, expenseTypes, profitAndLoss, receiptsByDate, receiptView,
+  salesReport, discountsReport, expensesReport, expenseTypes, profitAndLoss, receiptsByDate, receiptView,
   billNo, itemsSold, paymentLabel, isVoid, isSale,
 };

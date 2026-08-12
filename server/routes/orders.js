@@ -46,6 +46,60 @@ const dayFilter = (t) => `
 
 const isDateOnly = (s) => /^\d{4}-\d{2}-\d{2}$/.test(String(s || ''));
 
+// Half a fils. JOD is a 3-decimal currency and the client rounds to it, so exact equality
+// on floats would reject honest bills.
+const EPS = 0.0005;
+
+// Returns an error code, or null when the bill's discounts add up.
+// A bill with no line discounts is not examined at all: this must not change the contract
+// for the orders that already exist, only police the field being introduced.
+function validateDiscounts(o) {
+  const items = Array.isArray(o.items) ? o.items : [];
+  // "Carries a discount" is decided on the field being PRESENT, not on it being a number.
+  // Testing `Number(li.disc) > 0` looked equivalent and was not: a junk value is NaN, NaN
+  // fails every comparison, and the bill would skip validation entirely — the one input
+  // shaped like an attack was the one that got waved through.
+  const present = (li) => li && li.disc !== undefined && li.disc !== null && li.disc !== '';
+  if (!items.some(present)) return null;
+
+  let gross = 0;
+  let discTotal = 0;
+  for (const li of items) {
+    const qty = Number(li.qty) || 0;
+    const price = Number(li.price) || 0;
+    const amount = price * qty;
+    gross += amount;
+
+    const d = present(li) ? Number(li.disc) : 0;
+    if (!Number.isFinite(d)) return 'invalid_discount';
+    if (d < 0) return 'invalid_discount';                   // a "discount" that adds money
+    if (d > amount + EPS) return 'discount_exceeds_line';   // line would go negative
+    discTotal += d;
+  }
+
+  if (Math.abs((Number(o.disc) || 0) - discTotal) > EPS) return 'discount_mismatch';
+  if (Math.abs((Number(o.total) || 0) - (gross - discTotal)) > EPS) return 'total_mismatch';
+  return null;
+}
+
+// The reason a discount was given: free text, kept OFF the customer's bill and surfaced in
+// the Discounts report instead. Stored on the line beside the amount it explains, so a
+// manager reading the report a month later sees which item the reason belongs to.
+//
+// A note without a discount is meaningless, and would otherwise be a free-text field on
+// every line of every order — an unbounded write nobody reads. Dropped rather than stored.
+const NOTE_MAX = 120;
+function normaliseDiscountNotes(o) {
+  if (!Array.isArray(o.items)) return;
+  for (const li of o.items) {
+    if (!li || typeof li !== 'object') continue;
+    const hasDisc = Number(li.disc) > 0;
+    const note = String(li.disc_note ?? '').trim().slice(0, NOTE_MAX);
+    if (hasDisc && note) li.disc_note = note;
+    else delete li.disc_note;
+  }
+}
+
 router.get('/', requireSession, requireView('history', 'dashboard', 'reports'), async (req, res, next) => {
   try {
     let limit = parseInt(req.query.limit, 10);
@@ -107,6 +161,25 @@ router.post('/', requireSession, async (req, res, next) => {
   if (o.id === undefined || o.id === null || String(o.id).trim() === '') return fail(res, 'invalid', 400);
   const t = tableFor(o.floor);
   if (!t) return fail(res, 'invalid_floor', 400);   // every order must declare its store
+
+  // ── Line discounts ────────────────────────────────────────────────────────────
+  // A line may carry `disc`: an amount in JOD taken off THAT line (not a percentage — the
+  // shop bargains in dinars, so a percentage would be a conversion the cashier has to do in
+  // their head and the customer cannot check).
+  //
+  // Validated here rather than trusted, because a discount is the one field on a bill whose
+  // whole purpose is to reduce what is owed. Unchecked, `disc: 9999` on a 5 JOD bottle is a
+  // negative line, a negative total, and a cash drawer that is short at close with a valid
+  // invoice explaining why. Three things must hold:
+  //   1. a discount is a positive amount, never a credit;
+  //   2. it never exceeds the line it is taken off (no line may go below zero);
+  //   3. the order's `disc` and `total` agree with the lines — a discount that appears on the
+  //      receipt but not in the total is a receipt that lies, and one that reduces the total
+  //      further than it claims is theft with a paper trail.
+  // The tolerance is half a fils: JOD is 3dp, and the client rounds.
+  const discErr = validateDiscounts(o);
+  if (discErr) return fail(res, discErr, 400);
+  normaliseDiscountNotes(o);
 
   const isRefund = o.status === 'refund';
   const client = await db.pool.connect();

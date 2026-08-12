@@ -48,6 +48,23 @@ function salesSheet(orders, floor, period) {
   return { name: 'Sales', ...sheet(s, period.label, table) };
 }
 
+// ── Discounts ─────────────────────────────────────────────────────────────────
+// One row per discounted line. The Reason column is the whole point of exporting this: it is
+// the only place the note appears, by design — it is never printed on the customer's bill.
+function discountsSheet(orders, floor, period) {
+  const s = store(floor);
+  const rep = R.discountsReport(orders, floor, period);
+  const m = (v) => money(v, s.dp);
+  const table = [
+    ['Date', 'Bill No', 'Item', 'Size', 'Qty', 'Before Discount', 'Discount', 'After Discount', 'Reason', 'Cashier'],
+    ...rep.rows.map((r) => [
+      r.date, r.billNo, r.item, r.size, qty(r.qty), m(r.gross), m(r.disc), m(r.net), r.note, r.cashier,
+    ]),
+    ['TOTAL', '', '', '', '', m(rep.totals.gross), m(rep.totals.disc), '', '', ''],
+  ];
+  return { name: 'Discounts', ...sheet(s, period.label, table) };
+}
+
 // ── Expenses ──────────────────────────────────────────────────────────────────
 // [QUIRK] ASCENDING here, while the on-screen table is descending.
 function expensesSheet(expenses, floor, period) {
@@ -87,5 +104,5 @@ function exportFilename(floor, report, period, now = new Date()) {
 const workbook = (sheets) => writeWorkbook(sheets);
 
 module.exports = {
-  salesSheet, expensesSheet, pnlSheet, headerBlock, exportFilename, workbook, money, qty,
+  salesSheet, discountsSheet, expensesSheet, pnlSheet, headerBlock, exportFilename, workbook, money, qty,
 };

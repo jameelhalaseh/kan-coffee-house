@@ -68,7 +68,7 @@ function SalesView({ user, notify }) {
     setCart((prev) => {
       const i = prev.findIndex((l) => l.id === p.id);
       if (i >= 0) { const next = [...prev]; next[i] = { ...next[i], qty: next[i].qty + qty }; return next; }
-      return [...prev, { id: p.id, barcode: p.barcode, name: p.name, price: Number(p.price) || 0, qty, unit: p.unit || 'ea' }];
+      return [...prev, { id: p.id, barcode: p.barcode, name: p.name, price: Number(p.price) || 0, qty, unit: p.unit || 'ea', size: p.size || null, disc: 0, disc_note: '' }];
     });
     beep(true);
     flash({ name: p.name, price: Number(p.price) || 0, qty });
@@ -132,7 +132,14 @@ function SalesView({ user, notify }) {
   const removeLine = (id) => setCart((prev) => prev.filter((l) => l.id !== id));
   const addCustom = ({ name, price, qty }) => setCart((prev) => [...prev, { id: 'misc-' + uid(), barcode: null, name, price: Number(price) || 0, qty: Number(qty) || 1, custom: true }]);
 
-  const total = cart.reduce((s, l) => s + l.price * l.qty, 0);
+  // Gross, discount and net. A line's `disc` is an amount in JOD taken off THAT line — the
+  // shop bargains in dinars ("take half a dinar off the arak"), not in percentages, and a
+  // percentage would be a sum the cashier does in their head and the customer cannot check.
+  // Several lines can each carry their own, which is why this is per-line and not one
+  // bill-level field.
+  const gross = cart.reduce((s, l) => s + l.price * l.qty, 0);
+  const discTotal = cart.reduce((s, l) => s + (Number(l.disc) || 0), 0);
+  const total = gross - discTotal;
   // Shelf prices in Jordan are VAT-INCLUSIVE, so the tax is extracted from the total rather
   // than added on top — the customer pays exactly the marked price. Checkout used to send
   // `tax: 0, sub: total` and never imported TAX_RATE at all, so every sale was recorded as
@@ -144,7 +151,7 @@ function SalesView({ user, notify }) {
 
   // Push the live cart to the customer-facing display (2nd screen).
   useEffect(() => {
-    const payload = { items: cart.map((l) => ({ name: l.name, price: l.price, qty: l.qty })), total, change, store: STORE_NAME };
+    const payload = { items: cart.map((l) => ({ name: l.name, price: l.price, qty: l.qty, disc: Number(l.disc) || 0, size: l.size || null })), total, change, store: STORE_NAME };
     try { localStorage.setItem(DISPLAY_KEY, JSON.stringify(payload)); } catch (_) {}
     try { const bc = new BroadcastChannel(BC_NAME); bc.postMessage(payload); bc.close(); } catch (_) {}
   }, [cart, total, change]);
@@ -204,7 +211,10 @@ function SalesView({ user, notify }) {
     if (!cart.length || busy) return;
     setBusy(true);
     const { date, time } = nowParts();
-    const sale = { id: uid(), floor: DEFAULT_FLOOR, items: cart, sub: r3(netAmount), tax: r3(taxAmount), svc: 0, disc: 0, total, pay, waiter: user.username, status: 'paid', date, time };
+    // VAT is extracted from the DISCOUNTED total, not the shelf total: the customer pays
+    // `total`, so that is the tax-inclusive amount the VAT sits inside. Extracting it from
+    // the gross would file tax on money nobody handed over.
+    const sale = { id: uid(), floor: DEFAULT_FLOOR, items: cart, sub: r3(netAmount), tax: r3(taxAmount), svc: 0, disc: r3(discTotal), total: r3(total), pay, waiter: user.username, status: 'paid', date, time };
     // Sale is committed at this point — the popup only decides whether to print.
     const finish = (s) => { setReceipt({ ...s, change }); setCart([]); setTendered(''); setPay('cash'); };
     try {
@@ -314,6 +324,7 @@ function SalesView({ user, notify }) {
             }}>
               <span style={{ fontSize: 15, fontWeight: 700, lineHeight: 1.25, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
                 {p.name}{p.unit === 'kg' ? ' ⚖' : ''}
+                {p.size ? <span style={{ color: C.dim, fontWeight: 800 }}> · {p.size}</span> : ''}
               </span>
               <span style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6 }}>
                 <span style={{ color: C.accent, fontWeight: 800, fontSize: 16 }}>{money(p.price)}{p.unit === 'kg' ? (ARABIC ? '/كغ' : '/kg') : ''}</span>
@@ -325,7 +336,7 @@ function SalesView({ user, notify }) {
                   ? <span style={{ fontSize: 11, color: '#fff', background: C.red, fontWeight: 800, borderRadius: 8, padding: '2px 7px', whiteSpace: 'nowrap' }}>
                       {ARABIC ? 'نفد' : 'Out'}
                     </span>
-                  : Number(p.stock) <= 5
+                  : Number(p.stock) <= Number(p.low_at ?? 5)
                     ? <span title={ARABIC ? 'كمية منخفضة' : 'Low stock'}
                         style={{ fontSize: 11, color: C.red, border: `1px solid ${C.red}`, fontWeight: 800, borderRadius: 8, padding: '2px 7px', whiteSpace: 'nowrap' }}>
                         {ARABIC ? `${Number(p.stock)} متبقٍ` : `${Number(p.stock)} left`}
@@ -386,12 +397,28 @@ function SalesView({ user, notify }) {
             <div key={l.id} className="rise" style={{ padding: '10px 0', borderBottom: `1px dashed ${C.line}` }}>
               <button onClick={() => setEditLine(l)} style={{ width: '100%', display: 'flex', alignItems: 'baseline', gap: 10, background: 'none', border: 'none', textAlign: 'start', cursor: 'pointer', color: C.text, fontFamily: 'inherit', padding: 0 }}>
                 <span style={{ flex: 1, minWidth: 0, fontSize: 15, fontWeight: 600, lineHeight: 1.3 }}>
-                  {l.name} <span style={{ fontSize: 12, color: C.dim }}>✎</span>
+                  {l.name}{l.size ? <span style={{ color: C.dim, fontWeight: 700 }}> · {l.size}</span> : ''} <span style={{ fontSize: 12, color: C.dim }}>✎</span>
                 </span>
                 <span style={{ flexShrink: 0, fontSize: 16, fontWeight: 800, fontVariantNumeric: 'tabular-nums' }}>
-                  {amount(l.price * l.qty)}
+                  {amount(l.price * l.qty - (Number(l.disc) || 0))}
                 </span>
               </button>
+              {/* A discounted line shows BOTH numbers. The customer asked for money off and
+                  is entitled to see it come off; showing only the reduced figure makes the
+                  discount unverifiable at the counter. */}
+              {Number(l.disc) > 0 && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: C.green, fontWeight: 700, marginTop: 2 }}>
+                  <span>{ARABIC ? 'خصم' : 'Discount'}</span>
+                  <span style={{ fontVariantNumeric: 'tabular-nums' }}>
+                    <span style={{ color: C.dim, textDecoration: 'line-through', marginInlineEnd: 6 }}>{amount(l.price * l.qty)}</span>
+                    − {amount(l.disc)}
+                  </span>
+                </div>
+              )}
+              {/* The cashier's own screen may show the reason; the customer's may not. */}
+              {Number(l.disc) > 0 && l.disc_note && (
+                <div style={{ fontSize: 11, color: C.dim, fontStyle: 'italic' }}>&ldquo;{l.disc_note}&rdquo;</div>
+              )}
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
                 <button onClick={() => setQty(l.id, l.qty - 1)} style={qtyBtn}>−</button>
                 <span style={{ minWidth: 28, textAlign: 'center', fontWeight: 800, fontSize: 16 }}>{l.qty}</span>
@@ -420,6 +447,12 @@ function SalesView({ user, notify }) {
                 <span>{ARABIC ? `ضريبة ${Math.round(TAX_RATE * 100)}% (مشمولة)` : `VAT ${Math.round(TAX_RATE * 100)}% (incl.)`}</span>
                 <span style={{ fontVariantNumeric: 'tabular-nums' }}>{amount(taxAmount)}</span>
               </div>
+            </div>
+          )}
+          {discTotal > 0 && (
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 15, color: C.green, fontWeight: 800, marginBottom: 8 }}>
+              <span>{ARABIC ? 'إجمالي الخصم' : 'Total discount'}</span>
+              <span style={{ fontVariantNumeric: 'tabular-nums' }}>− {amount(discTotal)}</span>
             </div>
           )}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 26, fontWeight: 800 }}>
@@ -506,7 +539,7 @@ function SalesView({ user, notify }) {
       {editLine && (
         <LineEditModal line={editLine}
           onClose={() => setEditLine(null)}
-          onApply={(qty, price) => { if (qty <= 0) removeLine(editLine.id); else setLine(editLine.id, { qty, price }); setEditLine(null); }}
+          onApply={(qty, price, disc, disc_note) => { if (qty <= 0) removeLine(editLine.id); else setLine(editLine.id, { qty, price, disc, disc_note }); setEditLine(null); }}
           onRemove={() => { removeLine(editLine.id); setEditLine(null); }} />
       )}
       {quickItem && (
@@ -589,13 +622,33 @@ function WeightModal({ product, onClose, onAdd, notify }) {
     </Overlay>
   );
 }
-// ── Edit a cart line: set quantity + override price via keypad ───────────────────
+// ── Edit a cart line: quantity, price override, and a discount in JOD ────────────
+//
+// The discount lives HERE, on the line, rather than as one field at the foot of the bill.
+// That is the whole ask: "half a dinar off the arak, a dinar off the whisky" is two
+// discounts on one bill, and a single bill-level box cannot say which item either belongs
+// to — the receipt would show a lump sum against nothing in particular, and a manager
+// reviewing it a week later could not tell what was actually agreed.
+//
+// It is an AMOUNT, not a percentage, because that is how the counter bargains. The keypad
+// takes dinars directly, so nothing is converted in anyone's head.
 function LineEditModal({ line, onClose, onApply, onRemove }) {
   const [field, setField] = useState('qty');
   const [qty, setQty] = useState(String(line.qty));
   const [price, setPrice] = useState(String(line.price));
-  const set = field === 'qty' ? setQty : setPrice;
+  const [disc, setDisc] = useState(line.disc ? String(line.disc) : '');
+  const [note, setNote] = useState(line.disc_note || '');
+  const set = field === 'qty' ? setQty : field === 'price' ? setPrice : setDisc;
   const onKey = (ch) => set((v) => (ch === '.' && v.includes('.') ? v : (v === '0' && ch !== '.' ? ch : v + ch)));
+
+  const lineAmount = (Number(qty) || 0) * (Number(price) || 0);
+  const wanted = Number(disc) || 0;
+  // A discount bigger than the line would make the line negative — money out of the drawer
+  // with an invoice authorising it. The server refuses it too (discount_exceeds_line); this
+  // is the half that tells the cashier BEFORE they save.
+  const tooBig = wanted > lineAmount + 0.0005;
+  const finalDisc = tooBig ? 0 : wanted;
+
   const tab = (name, label, val) => (
     <button type="button" onClick={() => setField(name)} style={{ flex: 1, padding: '12px', borderRadius: 8, border: `1px solid ${field === name ? C.accent : C.line}`, background: field === name ? C.accent : C.panel2, color: field === name ? C.accentText : C.text, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
       <div style={{ fontSize: 12 }}>{label}</div><div style={{ fontSize: 18 }}>{val || '0'}</div>
@@ -603,15 +656,41 @@ function LineEditModal({ line, onClose, onApply, onRemove }) {
   );
   return (
     <Overlay onClose={onClose}>
-      <div style={{ ...S.card, width: 320, display: 'flex', flexDirection: 'column', gap: 10 }}>
-        <div style={{ fontWeight: 800, fontSize: 16 }}>{line.name}</div>
+      <div style={{ ...S.card, width: 340, display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <div style={{ fontWeight: 800, fontSize: 16 }}>
+          {line.name}{line.size ? <span style={{ color: C.dim }}> · {line.size}</span> : ''}
+        </div>
         <div style={{ display: 'flex', gap: 8 }}>
           {tab('qty', ARABIC ? 'الكمية' : 'Qty', qty)}
           {tab('price', ARABIC ? 'السعر' : 'Price', price)}
+          {tab('disc', ARABIC ? 'خصم (د.أ)' : 'Disc (JOD)', disc)}
         </div>
+        {/* What the line will actually come to, updated as they type. The cashier is quoting
+            this number to a customer standing in front of them. */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: C.panel2, border: `1px solid ${tooBig ? C.red : C.line}`, borderRadius: 10, padding: '10px 14px' }}>
+          <span style={{ fontSize: 13, color: C.dim, fontWeight: 700 }}>{ARABIC ? 'صافي السطر' : 'Line total'}</span>
+          <span style={{ fontSize: 19, fontWeight: 800, color: tooBig ? C.red : C.accent, fontVariantNumeric: 'tabular-nums' }}>
+            {money(lineAmount - finalDisc)}
+          </span>
+        </div>
+        {tooBig && (
+          <div style={{ color: C.red, fontSize: 13, fontWeight: 700 }}>
+            {ARABIC ? `الخصم أكبر من قيمة السطر (${money(lineAmount)})` : `Discount is more than the line (${money(lineAmount)})`}
+          </div>
+        )}
+        {/* WHY the discount was given. It is deliberately NOT printed on the customer's bill
+            — "staff friend" or "damaged label" is a note between the shop and its own records,
+            and putting it in the customer's hand invites an argument at the counter. It
+            travels with the line into the Discounts report, which is where a manager asks who
+            authorised what. */}
+        {finalDisc > 0 && (
+          <input style={S.input} value={note} onChange={(e) => setNote(e.target.value)} maxLength={120}
+            placeholder={ARABIC ? 'سبب الخصم (للتقارير فقط)' : 'Reason (reports only — not on the bill)'} />
+        )}
         <NumPad onKey={onKey} onClear={() => set('')} onBackspace={() => set((v) => v.slice(0, -1))} />
         <div style={{ display: 'flex', gap: 8 }}>
-          <button onClick={() => onApply(Number(qty) || 0, Number(price) || 0)} style={{ ...S.btn, flex: 1, padding: '14px', fontSize: 16 }}>{ARABIC ? 'حفظ' : 'Save'}</button>
+          <button onClick={() => onApply(Number(qty) || 0, Number(price) || 0, finalDisc, finalDisc > 0 ? note.trim() : '')} disabled={tooBig}
+            style={{ ...S.btn, flex: 1, padding: '14px', fontSize: 16, opacity: tooBig ? 0.5 : 1 }}>{ARABIC ? 'حفظ' : 'Save'}</button>
           <button onClick={onRemove} style={{ ...S.btnGhost, padding: '14px', color: C.red }}>{ARABIC ? 'حذف' : 'Remove'}</button>
         </div>
       </div>

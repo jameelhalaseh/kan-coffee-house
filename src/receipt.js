@@ -22,9 +22,17 @@ function buildReceipt(sale) {
   const lines = (sale.items || []).map((li) => {
     const qty = Number(li.qty) || 0;
     const price = Number(li.price) || 0;
+    const disc = Number(li.disc) || 0;
+    const size = li.size ? ` ${li.size}` : '';
     const detail = qty !== 1 ? `<div class="qty">${qty} × ${price.toFixed(3)}</div>` : '';
-    return `<tr><td>${escapeHtml(li.name)}${detail}</td>
-      <td class="amt">${(price * qty).toFixed(3)}</td></tr>`;
+    // The discount prints UNDER the item it was given on, showing what the line was before
+    // it. On a 280px roll that costs one short line and is the difference between a customer
+    // being able to check the discount they asked for and having to take it on trust.
+    const off = disc > 0
+      ? `<div class="qty">${(price * qty).toFixed(3)} − ${disc.toFixed(3)} ${ARABIC ? 'خصم' : 'discount'}</div>`
+      : '';
+    return `<tr><td>${escapeHtml(li.name)}${escapeHtml(size)}${detail}${off}</td>
+      <td class="amt">${(price * qty - disc).toFixed(3)}</td></tr>`;
   }).join('');
   const thanks = ARABIC ? (BILL.footerThanksAr || BILL.footerThanks) : BILL.footerThanks;
   const css = `
@@ -46,7 +54,10 @@ function buildReceipt(sale) {
     <div class="muted">Invoice ${BILL.invoicePrefix || ''}${sale.invoice_no ?? ''} — ${sale.date} ${sale.time}</div>
     <table><thead><tr><th>Item</th><th class="amt">Total</th></tr></thead>
       <tbody>${lines}</tbody>
-      <tfoot>${Number(sale.tax) > 0 ? `
+      <tfoot>${Number(sale.disc) > 0 ? `
+        <tr><td>${ARABIC ? 'إجمالي الخصم' : 'Total discount'}</td>
+          <td class="amt">−${(Number(sale.disc) || 0).toFixed(3)}</td></tr>` : ''}
+        ${Number(sale.tax) > 0 ? `
         <tr><td>Subtotal</td>
           <td class="amt">${(Number(sale.sub) || 0).toFixed(3)}</td></tr>
         <tr><td>VAT ${Math.round(TAX_RATE * 100)}% (included)</td>

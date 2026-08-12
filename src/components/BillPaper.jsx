@@ -27,9 +27,14 @@ const d3 = (n) => (Number(n) || 0).toFixed(3);
 export function billFromSale(sale) {
   const items = (sale.items || []).map((li) => ({
     name: li.name,
+    size: li.size || '',
     qty: String(Number(li.qty) || 0),
     price: d3(li.price),
-    amount: d3((Number(li.price) || 0) * (Number(li.qty) || 0)),
+    disc: d3(li.disc),
+    // The line's own discount comes off the line, so `amount` is what that line actually
+    // contributes to the total. The gross is kept alongside it so the bill can show both.
+    gross: d3((Number(li.price) || 0) * (Number(li.qty) || 0)),
+    amount: d3((Number(li.price) || 0) * (Number(li.qty) || 0) - (Number(li.disc) || 0)),
   }));
   return {
     billNo: sale.invoice_no ?? String(sale.id || '').slice(0, 6).toUpperCase(),
@@ -123,10 +128,19 @@ function BillPaper({ bill: r, compact = false }) {
         <tbody>
           {(r.items || []).map((li, i) => (
             <tr key={i} style={{ borderBottom: dashed }}>
-              <td style={{ padding: '5px 0' }}>{li.name}</td>
-              <td style={{ padding: '5px 0', textAlign: 'center' }}>{li.qty}</td>
-              <td style={{ padding: '5px 0', textAlign: 'end' }}>{li.price}</td>
-              <td style={{ padding: '5px 0', textAlign: 'end', fontWeight: 700 }}>{li.amount}</td>
+              <td style={{ padding: '5px 0' }}>
+                {li.name}{li.size ? <span style={{ color: PAPER.faint }}> · {li.size}</span> : ''}
+                {/* An itemised discount is printed under the line it belongs to, naming the
+                    item it came off. A lump sum at the foot of the bill would not say which. */}
+                {li.disc && li.disc !== '0.000' && (
+                  <div style={{ fontSize: 11, color: PAPER.faint }}>
+                    {ARABIC ? 'خصم' : 'Discount'} −{li.disc} {ARABIC ? `(من ${li.gross})` : `(off ${li.gross})`}
+                  </div>
+                )}
+              </td>
+              <td style={{ padding: '5px 0', textAlign: 'center', verticalAlign: 'top' }}>{li.qty}</td>
+              <td style={{ padding: '5px 0', textAlign: 'end', verticalAlign: 'top' }}>{li.price}</td>
+              <td style={{ padding: '5px 0', textAlign: 'end', fontWeight: 700, verticalAlign: 'top' }}>{li.amount}</td>
             </tr>
           ))}
           {!(r.items || []).length && (

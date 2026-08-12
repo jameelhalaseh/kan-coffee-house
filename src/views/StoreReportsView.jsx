@@ -19,6 +19,7 @@ const FLOOR = DEFAULT_FLOOR;   // single store; the API is still store-scoped
 
 const TABS = [
   { key: 'sales', en: 'Sales', ar: 'المبيعات', export: 'sales' },
+  { key: 'discounts', en: 'Discounts', ar: 'الخصومات', export: 'discounts' },
   { key: 'expenses', en: 'Expenses', ar: 'المصاريف', export: 'expenses' },
   { key: 'pnl', en: 'Profit & Loss', ar: 'الأرباح والخسائر', export: 'pnl' },
   { key: 'receipts', en: 'Receipts', ar: 'الفواتير', export: null },
@@ -343,6 +344,57 @@ function Body({ tab, data, isAdmin, onDelete, span, preset, receiptDate, onJump,
               <td style={td}>{data.totals.itemsSold}</td><td style={td}>{data.totals.sub}</td>
               <td style={td}>{data.totals.tax}</td><td style={td}>{data.totals.grandTotal}</td>
               <td style={td}>{data.totals.disc}</td>
+            </tr>
+          )}
+        </Table>
+      </>
+    );
+  }
+
+  // Discounts — one row per discounted LINE, with the reason it was given.
+  //
+  // This is the ONLY place the reason appears. It is deliberately absent from the bill, the
+  // thermal roll and the customer display: "staff friend" or "damaged label" is a note
+  // between the shop and its own records, and handing it to the customer invites an argument
+  // at the counter over who gets what.
+  if (tab === 'discounts') {
+    return (
+      <>
+        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+          <Stat label={ARABIC ? 'إجمالي الخصم' : 'Total Discount'} value={amt(data.totals.disc)} accent />
+          <Stat label={ARABIC ? 'أسطر مخصومة' : 'Discounted Lines'} value={String(data.kpi.discountedLines)} />
+          <Stat label={ARABIC ? 'قبل الخصم' : 'Before Discount'} value={amt(data.totals.gross)} />
+        </div>
+        <Table head={[ARABIC ? 'التاريخ' : 'Date', ARABIC ? 'رقم الفاتورة' : 'Bill No',
+          ARABIC ? 'الصنف' : 'Item', ARABIC ? 'الكمية' : 'Qty',
+          ARABIC ? 'قبل الخصم' : 'Before', ARABIC ? 'الخصم' : 'Discount',
+          ARABIC ? 'بعد الخصم' : 'After', ARABIC ? 'السبب' : 'Reason',
+          ARABIC ? 'الكاشير' : 'Cashier']}>
+          {!data.rows.length && (
+            <Empty>{ARABIC ? 'لا خصومات في هذه الفترة' : 'No discounts given in this period'}</Empty>
+          )}
+          {data.rows.map((r, i) => (
+            <tr key={i}>
+              <td style={td}>{r.date}</td><td style={td}>{r.billNo}</td>
+              <td style={td}>{r.item}{r.size ? <span style={{ color: C.dim }}> · {r.size}</span> : ''}</td>
+              <td style={td}>{r.qty}</td>
+              <td style={td}>{r.gross}</td>
+              <td style={{ ...td, color: C.green, fontWeight: 700 }}>{r.disc}</td>
+              <td style={td}>{r.net}</td>
+              {/* A discount with no reason recorded is itself worth seeing, so say so rather
+                  than leaving the cell blank and ambiguous. */}
+              <td style={{ ...td, color: r.note ? C.text : C.dim }}>
+                {r.note || (ARABIC ? '— بدون سبب' : '— none given')}
+              </td>
+              <td style={td}>{r.cashier}</td>
+            </tr>
+          ))}
+          {!!data.rows.length && (
+            <tr style={TOTAL_ROW}>
+              <td style={td}>TOTAL</td><td style={td} /><td style={td} /><td style={td} />
+              <td style={td}>{data.totals.gross}</td>
+              <td style={td}>{data.totals.disc}</td>
+              <td style={td} /><td style={td} /><td style={td} />
             </tr>
           )}
         </Table>

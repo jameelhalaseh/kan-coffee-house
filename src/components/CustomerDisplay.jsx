@@ -22,8 +22,16 @@ function CustomerDisplay() {
         {!items.length && <div style={{ color: C.dim, fontSize: 26, textAlign: 'center', marginTop: 80 }}>{ARABIC ? 'أهلاً بك' : 'Welcome'}</div>}
         {items.map((l, i) => (
           <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 0', borderBottom: `1px solid ${C.line}`, fontSize: 26 }}>
-            <span>{l.name} <span style={{ color: C.dim, fontSize: 20 }}>× {l.qty}</span></span>
-            <span style={{ fontWeight: 700 }}>{money(l.price * l.qty)}</span>
+            <span>
+              {l.name}{l.size ? <span style={{ color: C.dim }}> · {l.size}</span> : ''}
+              {' '}<span style={{ color: C.dim, fontSize: 20 }}>× {l.qty}</span>
+              {/* The customer is the person the discount was granted to, so this is where
+                  they see it applied — before they hand the money over, not after. */}
+              {Number(l.disc) > 0 && (
+                <span style={{ color: C.green, fontSize: 20 }}> − {money(l.disc)}</span>
+              )}
+            </span>
+            <span style={{ fontWeight: 700 }}>{money(l.price * l.qty - (Number(l.disc) || 0))}</span>
           </div>
         ))}
       </div>

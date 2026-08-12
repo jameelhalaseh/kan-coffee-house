@@ -48,6 +48,15 @@ function createReportingRouter(repo) {
     } catch (e) { next(e); }
   });
 
+  // Every discounted LINE in the period, with the reason it was given. Same view grant as
+  // the other reports — a discount log is revenue data.
+  router.get('/reports/:floor/discounts', ...view, async (req, res, next) => {
+    try {
+      const s = scopeOf(req, res); if (!s) return;
+      res.json(send(s.floor, R.discountsReport(await repo.orders(s.floor, s.period), s.floor, s.period)));
+    } catch (e) { next(e); }
+  });
+
   router.get('/reports/:floor/expenses', ...view, async (req, res, next) => {
     try {
       const s = scopeOf(req, res); if (!s) return;
@@ -143,6 +152,8 @@ function createReportingRouter(repo) {
       switch (req.params.report) {
         case 'sales':
           sheets = [X.salesSheet(await repo.orders(floor, period), floor, period)]; break;
+        case 'discounts':
+          sheets = [X.discountsSheet(await repo.orders(floor, period), floor, period)]; break;
         case 'expenses':
           sheets = [X.expensesSheet(await repo.expenses(floor, period), floor, period)]; break;
         case 'pnl':

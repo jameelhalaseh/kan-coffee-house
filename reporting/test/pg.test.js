@@ -287,6 +287,9 @@ describe('receipt view and edit', () => {
     expect(res.body.billNo).toBe('42');
     expect(res.body.items).toEqual([{
       name: 'Stolichnaya 700ml', qty: '2', price: '21.000', amount: '42.000',
+      // Discount fields ride on every line so the bill view can print what a discount came
+      // off. An undiscounted line carries zeros, so `amount` still equals `gross`.
+      size: '', disc: '0.000', gross: '42.000',
     }]);
     expect(res.body.sub).toBe('36.207');
     expect(res.body.tax).toBe('5.793');
@@ -365,5 +368,102 @@ describe('receipt view and edit', () => {
     const res = await request(admin()).patch('/api/reports/main/receipts/r1').send({});
     expect(res.status).toBe(400);
     expect(res.body.error).toBe('nothing_to_change');
+  });
+});
+
+// ── Discounts report ──────────────────────────────────────────────────────────
+// The reason a discount was given is recorded for the SHOP, not for the customer: it must
+// reach this report and must never reach the bill. These tests pin both halves.
+describe('discounts report', () => {
+  const appAs = (user) => {
+    const app = express();
+    app.use(express.json());
+    app.use((req, _res, next) => { req.user = user; next(); });
+    app.use('/api', createReportingRouter(repo));
+    return app;
+  };
+  const admin = () => appAs({ username: 'root', role: 'admin' });
+  const viewer = () => appAs({ username: 'v', allowed_views: ['reports'] });
+
+  const discounted = () => sale({
+    id: 'd1', invoice_no: 60, date: '2026-08-11', time: '20:00:00', waiter: 'sara',
+    items: [
+      { name: 'Arak', size: '750ml', qty: 1, price: '10', disc: '0.5', disc_note: 'damaged label' },
+      { name: 'Whiskey', size: '1L', qty: 1, price: '20', disc: '1', disc_note: 'staff friend' },
+      { name: 'Beer', qty: 6, price: '1' },
+    ],
+    sub: '29.741', tax: '4.759', disc: '1.5', total: '34.5',
+  });
+
+  test('one row per discounted line, carrying the reason', async () => {
+    await discounted();
+    const res = await request(admin()).get('/api/reports/main/discounts?period=all');
+    expect(res.status).toBe(200);
+    expect(res.body.rows).toHaveLength(2);          // the undiscounted beer is not a row
+    expect(res.body.rows[0]).toMatchObject({
+      billNo: '60', item: 'Arak', size: '750ml',
+      gross: '10.000', disc: '0.500', net: '9.500',
+      note: 'damaged label', cashier: 'sara',
+    });
+    expect(res.body.rows[1].note).toBe('staff friend');
+  });
+
+  test('totals sum the discounts, not the bills', async () => {
+    await discounted();
+    const res = await request(admin()).get('/api/reports/main/discounts?period=all');
+    expect(res.body.totals.disc).toBe('1.500');
+    expect(res.body.totals.gross).toBe('30.000');   // the two discounted lines only
+    expect(res.body.kpi.discountedLines).toBe(2);
+  });
+
+  test('THE REASON NEVER REACHES THE BILL', async () => {
+    // The bill view feeds BillPaper, which is what the customer is shown and what the
+    // thermal roll prints. The amount belongs there; the reason does not.
+    await discounted();
+    const res = await request(admin()).get('/api/reports/main/receipts/d1');
+    expect(res.status).toBe(200);
+    expect(res.body.items[0].disc).toBe('0.500');
+    expect(JSON.stringify(res.body)).not.toMatch(/damaged label|staff friend/);
+  });
+
+  test('a voided bill contributes no discounts', async () => {
+    // A discount on a sale that did not happen is not a discount.
+    await sale({
+      id: 'd2', invoice_no: 61, date: '2026-08-11', voided_at: new Date().toISOString(),
+      items: [{ name: 'Arak', qty: 1, price: '10', disc: '5', disc_note: 'void me' }],
+      disc: '5', total: '5',
+    });
+    const res = await request(admin()).get('/api/reports/main/discounts?period=all');
+    expect(res.body.rows).toHaveLength(0);
+  });
+
+  test('a discount with no reason recorded is still reported', async () => {
+    await sale({
+      id: 'd3', invoice_no: 62, date: '2026-08-11',
+      items: [{ name: 'Vodka', qty: 1, price: '15', disc: '2' }],
+      disc: '2', total: '13',
+    });
+    const res = await request(admin()).get('/api/reports/main/discounts?period=all');
+    expect(res.body.rows).toHaveLength(1);
+    expect(res.body.rows[0].note).toBe('');
+  });
+
+  test('the export carries a Reason column', async () => {
+    await discounted();
+    const res = await request(admin())
+      .get('/api/reports/main/export/discounts?period=all')
+      .buffer().parse((r, cb) => {
+        const chunks = [];
+        r.on('data', (c) => chunks.push(c));
+        r.on('end', () => cb(null, Buffer.concat(chunks)));
+      });
+    expect(res.status).toBe(200);
+    expect(res.headers['content-disposition']).toContain('main-discounts-');
+    expect(res.body.subarray(0, 2).toString()).toBe('PK');   // a real xlsx (zip) payload
+  });
+
+  test('a view-only user may read it; it is revenue data behind the same grant', async () => {
+    await discounted();
+    expect((await request(viewer()).get('/api/reports/main/discounts?period=all')).status).toBe(200);
   });
 });
