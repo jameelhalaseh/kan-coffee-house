@@ -53,7 +53,7 @@ function Login({ onLogin }) {
   const onKey = (ch) => setActiveValue((v) => v + ch);
   const onBackspace = () => setActiveValue((v) => v.slice(0, -1));
 
-  const fieldStyle = (name) => ({ ...S.input, fontSize: 17, padding: '14px 14px', ...(active === name && kb ? { borderColor: C.accent, boxShadow: `0 0 0 2px ${C.accent}33` } : {}) });
+  const fieldStyle = (name) => ({ ...S.input, fontSize: 19, padding: '16px 16px', ...(active === name && kb ? { borderColor: C.accent, boxShadow: `0 0 0 2px ${C.accent}33` } : {}) });
 
   const base = process.env.PUBLIC_URL || '';
   const bgPoster = base + '/login-bg.png';
@@ -90,7 +90,7 @@ function Login({ onLogin }) {
         <div style={{ color: '#fff', fontWeight: 600, fontSize: 'clamp(15px, 2.2vw, 24px)', letterSpacing: '.01em',
           textShadow: '0 2px 16px rgba(0,0,0,.7)' }}>we bring your idea to life.</div>
       </div>
-      <form onSubmit={submit} dir={ARABIC ? 'rtl' : 'ltr'} style={{ ...S.card, position: 'relative', zIndex: 2, width: 'min(94vw, 440px)', display: 'flex', flexDirection: 'column', gap: 14, backdropFilter: 'blur(6px)', background: 'rgba(26,28,37,.92)', boxShadow: '0 20px 60px rgba(0,0,0,.55)' }}>
+      <form onSubmit={submit} dir={ARABIC ? 'rtl' : 'ltr'} style={{ ...S.card, position: 'relative', zIndex: 2, width: 'min(94vw, 520px)', display: 'flex', flexDirection: 'column', gap: 14, backdropFilter: 'blur(6px)', background: 'rgba(26,28,37,.92)', boxShadow: '0 20px 60px rgba(0,0,0,.55)' }}>
         <div style={{ fontWeight: 800, fontSize: 30, color: C.accent, textAlign: 'center' }}>{STORE_NAME}</div>
         <div style={{ color: C.dim, fontSize: 14, textAlign: 'center', marginTop: -8 }}>{ARABIC ? 'تسجيل الدخول' : 'Sign in'}</div>
         <button type="button" onClick={toggleLang} style={{ ...S.btnGhost, alignSelf: 'center', padding: '6px 16px', fontSize: 13 }}>{ARABIC ? '🌐 English' : '🌐 عربي'}</button>
