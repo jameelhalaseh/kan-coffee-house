@@ -70,7 +70,7 @@ function CategoryGrid({ cards, total, onPick, emptyHint }) {
               {tileArt ? <span /> : (
                 <span style={{
                   width: 38, height: 38, borderRadius: 12, background: c.orphan ? C.line : catColor(c.name),
-                  color: c.orphan ? C.dim : '#0f1117',
+                  color: c.orphan ? C.dim : C.accentText,
                   display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 18,
                 }}>{c.orphan ? '?' : c.name.slice(0, 1)}</span>
               )}

@@ -82,7 +82,7 @@ function ProductModal({ initial, onClose, onSaved, notify, editing }) {
               return (
                 <button key={c} type="button" onClick={() => { setNewCat(false); setCat(c); }} style={{
                   ...S.btnGhost, padding: '8px 12px', fontSize: 13, display: 'flex', alignItems: 'center', gap: 7,
-                  ...(on ? { background: catColor(c), color: '#0f1117', borderColor: catColor(c), fontWeight: 800 } : {}),
+                  ...(on ? { background: catColor(c), color: C.accentText, borderColor: catColor(c), fontWeight: 800 } : {}),
                 }}>
                   {!on && <span style={{ width: 8, height: 8, borderRadius: 4, background: catColor(c), display: 'inline-block' }} />}
                   {c}

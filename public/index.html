@@ -10,7 +10,16 @@
     <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&family=DM+Sans:wght@400;600;700;800&display=swap" rel="stylesheet"/>
     <style>
       *{margin:0;padding:0;box-sizing:border-box;}
-      body{background:#0f1117;font-family:'DM Sans','Cairo',system-ui,sans-serif;}
+      /* These variables are the page frame — body background and scrollbars — and src/theme.js
+         overwrites them on <html> as soon as the bundle loads. The values here are only the
+         PRE-BUNDLE default, so they follow the OS: without that, a shop on the day theme
+         flashes a dark page for one frame on every load. (No inline <script> can set this
+         earlier: the CSP allows script-src 'self' only, by design.) */
+      :root{--bg:#0f1117;--text:#e6e6e6;--accent:#f0a830;--scroll-thumb:#2c2f3a;--scroll-thumb-hover:#3a3e4d;}
+      @media (prefers-color-scheme: light){
+        :root{--bg:#f2f4f7;--text:#161922;--accent:#e09a22;--scroll-thumb:#c3c9d2;--scroll-thumb-hover:#a8b0bc;}
+      }
+      body{background:var(--bg);color:var(--text);font-family:'DM Sans','Cairo',system-ui,sans-serif;}
       [dir="rtl"], [dir="rtl"] *{font-family:'Cairo','DM Sans',system-ui,sans-serif;}
       /* Touch feedback: every button presses down, hoverable ones lighten */
       button{transition:transform .08s ease, filter .12s ease, box-shadow .12s ease;}
@@ -20,14 +29,17 @@
       /* Slim dark scrollbars */
       ::-webkit-scrollbar{width:8px;height:8px;}
       ::-webkit-scrollbar-track{background:transparent;}
-      ::-webkit-scrollbar-thumb{background:#2c2f3a;border-radius:8px;}
-      ::-webkit-scrollbar-thumb:hover{background:#3a3e4d;}
+      ::-webkit-scrollbar-thumb{background:var(--scroll-thumb);border-radius:8px;}
+      ::-webkit-scrollbar-thumb:hover{background:var(--scroll-thumb-hover);}
       /* Entry animations */
       @keyframes rise{from{opacity:0;transform:translateY(10px);}to{opacity:1;transform:translateY(0);}}
       @keyframes pop{0%{transform:translateX(-50%) translateY(16px);opacity:0;}100%{transform:translateX(-50%) translateY(0);opacity:1;}}
       .rise{animation:rise .25s ease both;}
       .toast-pop{animation:pop .22s cubic-bezier(.16,1,.3,1) both;}
-      input:focus{border-color:#f0a830 !important;box-shadow:0 0 0 2px rgba(240,168,48,.2);}
+      input:focus{border-color:var(--accent) !important;box-shadow:0 0 0 2px rgba(240,168,48,.2);}
+      /* The night theme lightens a button on hover; on a white panel that washes it out, so
+         day darkens instead. */
+      @media (hover:hover){ :root[data-theme="day"] button:hover{filter:brightness(.94);} }
     </style>
       <link rel="manifest" href="%PUBLIC_URL%/manifest.json"/>
     <link rel="icon" href="%PUBLIC_URL%/icons/icon-192.png"/>

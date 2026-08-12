@@ -234,7 +234,7 @@ function ReportsView({ notify }) {
             <div style={{ fontWeight: 800, marginBottom: 8 }}>🅰 {ARABIC ? 'تحليل ABC (مساهمة الإيراد)' : 'ABC analysis (revenue contribution)'}</div>
             {abc.slice(0, 20).map((x, i) => (
               <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', borderBottom: `1px solid ${C.line}`, fontSize: 13 }}>
-                <span style={{ background: abcBadge(x.class), color: '#0f1117', borderRadius: 6, fontWeight: 800, fontSize: 11, padding: '2px 8px' }}>{x.class}</span>
+                <span style={{ background: abcBadge(x.class), color: C.accentText, borderRadius: 6, fontWeight: 800, fontSize: 11, padding: '2px 8px' }}>{x.class}</span>
                 <span style={{ flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{x.name}</span>
                 <span style={{ color: C.dim }}>{money(x.revenue)}</span>
               </div>

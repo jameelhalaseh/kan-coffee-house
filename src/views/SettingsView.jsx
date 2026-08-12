@@ -8,7 +8,39 @@ import { money, catColor } from '../lib';
 import { Overlay } from '../components/ui';
 import { VIEW_ICONS } from '../components/Sidebar';
 
+// Settings is two unrelated jobs — the product shelf and the staff list — and stacking them
+// on one page made a long scroll where the thing you came for was never the thing on screen.
+// They are now tabs: one subject at a time, and the tab you were last on is remembered, so
+// re-opening Settings to fix one more category does not dump you back at the top.
+const SETTINGS_TABS = [
+  { key: 'categories', en: 'Categories', ar: 'الفئات', icon: '🏷' },
+  { key: 'users', en: 'Users & permissions', ar: 'المستخدمون والصلاحيات', icon: '👥' },
+];
+const TAB_KEY = 'liquor_store_settings_tab';
+
 function SettingsView({ user, isAdmin, notify }) {
+  const [tab, setTab] = useState(() => {
+    try {
+      const saved = localStorage.getItem(TAB_KEY);
+      return SETTINGS_TABS.some((t) => t.key === saved) ? saved : 'categories';
+    } catch (_) { return 'categories'; }
+  });
+  const pick = (k) => {
+    setTab(k);
+    try { localStorage.setItem(TAB_KEY, k); } catch (_) { /* private mode: tab just won't persist */ }
+  };
+
+  // A non-admin has neither panel, so there are no tabs to show them — only the note.
+  if (!isAdmin) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 16, maxWidth: 920, marginInline: 'auto', width: '100%' }}>
+        <div style={{ ...S.card, color: C.dim, fontSize: 14 }}>
+          🔑 {ARABIC ? 'لتغيير كلمة المرور اضغط زر "كلمة المرور" في الشريط الجانبي.' : 'To change your password, use the "Password" button in the sidebar.'}
+        </div>
+      </div>
+    );
+  }
+
   return (
     // marginInline:auto, and a wider measure. App.jsx already centres a 1180px column for
     // every non-Sales view, but this panel capped itself at 760 INSIDE that column with no
@@ -16,13 +48,21 @@ function SettingsView({ user, isAdmin, notify }) {
     // against a large empty right margin. Centring it in the space it actually has, and
     // giving the category chips and the user rows more room to breathe.
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16, maxWidth: 920, marginInline: 'auto', width: '100%' }}>
-      {isAdmin && <Categories notify={notify} />}
-      {isAdmin && <Users me={user} notify={notify} />}
-      {!isAdmin && (
-        <div style={{ ...S.card, color: C.dim, fontSize: 14 }}>
-          🔑 {ARABIC ? 'لتغيير كلمة المرور اضغط زر "كلمة المرور" في الشريط الجانبي.' : 'To change your password, use the "Password" button in the sidebar.'}
-        </div>
-      )}
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        {SETTINGS_TABS.map((t) => (
+          <button key={t.key} onClick={() => pick(t.key)} style={{
+            ...S.btn, padding: '11px 18px', fontSize: 15, fontWeight: 700, borderRadius: 10,
+            background: tab === t.key ? C.accent : C.panel2,
+            color: tab === t.key ? C.accentText : C.text,
+            border: `1px solid ${tab === t.key ? C.accent : C.line}`,
+          }}>{t.icon} {ARABIC ? t.ar : t.en}</button>
+        ))}
+      </div>
+
+      {/* Mounted one at a time, not hidden with CSS: each panel fetches on mount, so keeping
+          the other mounted would fire a categories request every time you opened Users. */}
+      {tab === 'categories' && <Categories notify={notify} />}
+      {tab === 'users' && <Users me={user} notify={notify} />}
     </div>
   );
 }
