@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import api from '../api';
 import { C, S } from '../theme';
-import { ARABIC, STORE_NAME, DEFAULT_FLOOR, TAX_RATE } from '../client.config';
+import { ARABIC, STORE_NAME, DEFAULT_FLOOR, TAX_RATE, PAYMENTS } from '../client.config';
 import {
   money, amount, r3, splitInclusiveTax, uid, nowParts, cashSuggestions, catColor,
 } from '../lib';
@@ -151,6 +151,9 @@ function SalesView({ user, notify }) {
   // filed with the ISTD. (If this client's prices are ever quoted NET of VAT, this is the
   // one place to change — and every shelf price rises by the rate.)
   const { net: netAmount, tax: taxAmount } = splitInclusiveTax(total, TAX_RATE);
+  // Change is a CASH question. A card or a CliQ transfer is for the exact amount by
+  // construction, so asking what was tendered would be asking the cashier to invent a
+  // number, and any answer but the total would produce a change figure that is a lie.
   const change = pay === 'cash' && tendered ? (Number(tendered) - total) : null;
 
   // Push the live cart to the customer-facing display (2nd screen).
@@ -464,9 +467,9 @@ function SalesView({ user, notify }) {
           </div>
         </div>
         <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
-          {['cash', 'card'].map((m) => (
-            <button key={m} onClick={() => setPay(m)} style={{ ...S.btnGhost, flex: 1, padding: '14px', fontSize: 16, ...(pay === m ? { background: C.blue, color: '#fff', borderColor: C.blue } : {}) }}>
-              {m === 'cash' ? (ARABIC ? '💵 نقدي' : '💵 Cash') : (ARABIC ? '💳 بطاقة' : '💳 Card')}
+          {PAYMENTS.map((m) => (
+            <button key={m.key} onClick={() => setPay(m.key)} style={{ ...S.btnGhost, flex: 1, padding: '14px', fontSize: 16, ...(pay === m.key ? { background: C.blue, color: '#fff', borderColor: C.blue } : {}) }}>
+              {m.icon} {ARABIC ? m.ar : m.en}
             </button>
           ))}
         </div>

@@ -12,6 +12,7 @@ const { store, FLOORS } = require('./stores');
 const { resolvePeriod } = require('./period');
 const R = require('./reports');
 const S = require('./stock');
+const { PAY_KEYS } = require('./payments');
 const { serialize } = require('./money');
 const X = require('./export');
 const {
@@ -146,7 +147,7 @@ function createReportingRouter(repo) {
       if (attempted.length) {
         return res.status(400).json({ error: 'immutable_field', fields: attempted });
       }
-      if (b.pay !== undefined && !['cash', 'card'].includes(String(b.pay))) {
+      if (b.pay !== undefined && !PAY_KEYS.includes(String(b.pay))) {
         return fail(res, 'invalid_pay', 400);
       }
       if (b.buyer !== undefined && String(b.buyer).length > 120) return fail(res, 'invalid', 400);

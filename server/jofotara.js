@@ -45,6 +45,13 @@ function isConfigured() {
 //   01 = cash, 02 = receivable   |   1 = income, 2 = general sales, 3 = special sales
 // e.g. a cash sale by a standard-sales-registered taxpayer = "012".
 // ⚠ Verify this mapping against the ISTD manual before go-live.
+//
+// ⚠ CliQ IS FILED AS RECEIVABLE ('02'), THE SAME AS A CARD. That is this code keeping its
+// existing rule — anything that is not physical cash is '02' — and NOT a judgement that it
+// is the correct treatment. A CliQ transfer settles instantly, so a case can be made for
+// '01'; making that call is the seller's, with their accountant, against the ISTD manual.
+// It is written out here rather than left to fall through the `else` so the decision is
+// visible to whoever checks, instead of being an accident of how the ternary was worded.
 function invoiceTypeCode(order, taxpayerType) {
   const terms = String(order.pay || '').toLowerCase() === 'cash' ? '01' : '02';
   const reg = taxpayerType === 'standard' ? '2' : taxpayerType === 'special' ? '3' : '1';

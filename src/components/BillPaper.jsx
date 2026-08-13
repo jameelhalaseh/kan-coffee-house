@@ -9,7 +9,7 @@
 // The palette is FIXED, not themed: this is a document, and it is the same document whether
 // the app is in day or night mode.
 import React from 'react';
-import { ARABIC, CURRENCY, SELLER, STORE_NAME, BILL, TAX_RATE } from '../client.config';
+import { ARABIC, CURRENCY, SELLER, STORE_NAME, BILL, TAX_RATE, payLabel } from '../client.config';
 
 export const PAPER = { bg: '#fff', ink: '#111', faint: '#555', rule: '#c9c9c9' };
 const dashed = `1px dashed ${PAPER.rule}`;
@@ -99,7 +99,7 @@ function BillPaper({ bill: r, compact = false }) {
         </div>
         <div style={row}>
           <span style={{ color: PAPER.faint }}>{ARABIC ? 'طريقة الدفع' : 'Payment'}</span>
-          <span>{r.pay || '—'}</span>
+          <span>{r.pay ? payLabel(r.pay) : '—'}</span>
         </div>
         {r.cashier && (
           <div style={row}>

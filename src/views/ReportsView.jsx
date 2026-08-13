@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import api from '../api';
 import { C, S } from '../theme';
-import { ARABIC, CURRENCY, DEFAULT_FLOOR } from '../client.config';
+import { ARABIC, CURRENCY, DEFAULT_FLOOR, payLabel } from '../client.config';
 import { money, catColor, todayInStore } from '../lib';
 import { Stat, Field } from '../components/ui';
 import { Donut, Spline, Scatter, Bars } from '../components/charts';
@@ -71,7 +71,7 @@ function ReportsView({ notify }) {
   // Donut: payment split for today (Z-report lines).
   const payColor = { cash: C.green, card: C.blue, refund: C.red };
   const paySlices = ((zrep && zrep.lines) || []).map((l) => ({
-    label: l.pay === 'cash' ? (ARABIC ? 'نقدي' : 'Cash') : l.pay === 'card' ? (ARABIC ? 'بطاقة' : 'Card') : l.pay,
+    label: payLabel(l.pay),
     value: Math.abs(Number(l.total) || 0),
     color: payColor[l.pay] || C.dim,
   }));
@@ -170,7 +170,7 @@ function ReportsView({ notify }) {
             <div style={{ fontWeight: 800, marginBottom: 10 }}>🧮 {ARABIC ? 'تقرير الإغلاق (Z)' : 'Z-Report (close-out)'} — {today}</div>
             {zrep && zrep.lines.map((l) => (
               <div key={l.pay} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: `1px dashed ${C.line}`, fontSize: 15 }}>
-                <span style={{ textTransform: 'capitalize' }}>{l.pay === 'cash' ? (ARABIC ? '💵 نقدي' : '💵 Cash') : l.pay === 'card' ? (ARABIC ? '💳 بطاقة' : '💳 Card') : l.pay} <span style={{ color: C.dim, fontSize: 12 }}>×{l.orders}</span></span>
+                <span>{payLabel(l.pay, { icon: true })} <span style={{ color: C.dim, fontSize: 12 }}>×{l.orders}</span></span>
                 <span style={{ fontWeight: 700 }}>{money(l.total)}</span>
               </div>
             ))}

@@ -115,6 +115,10 @@ describe('invoice type code', () => {
 
   test('non-cash payment switches the terms digits to receivable', () => {
     expect(jofotara.invoiceTypeCode({ pay: 'card' }, 'standard')).toBe('022');
+    // CliQ files as receivable, the same as a card. Pinned so the treatment cannot change
+    // by accident — see the note on invoiceTypeCode: it is the seller's call to make, not
+    // something a refactor should decide.
+    expect(jofotara.invoiceTypeCode({ pay: 'cliq' }, 'standard')).toBe('022');
   });
 
   test('special-sales registration', () => {

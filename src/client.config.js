@@ -67,6 +67,40 @@ export const SELLER = CLIENT.bill.seller;
 // expense ledger, profit & loss and receipts, with an Excel export. Kept separate from
 // "reports" — which is the operational view (top products, ABC, dead stock, Z-report) — so
 // neither page has to be two things at once. It rides on the same `reports` grant.
+// How the shop takes money. ONE list, because a payment method that exists on the till
+// but not in the receipt editor — or reaches the reports under a key nothing has a label
+// for — is worse than not having it at all.
+//
+// `settled` marks money that is in hand the moment the sale is rung: cash in the drawer,
+// a CliQ transfer that has already landed. It is what decides whether the till asks for a
+// tendered amount and works out change, and nothing else should be re-deriving that from
+// the key.
+export const PAYMENTS = [
+  { key: "cash", en: "Cash", ar: "نقدي", icon: "💵", settled: true },
+  { key: "card", en: "Card", ar: "بطاقة", icon: "💳", settled: false },
+  // CliQ — Jordan's instant bank transfer. The customer pays from their phone and the
+  // money arrives before they leave the counter, so there is no change to give and no
+  // slip to reconcile at close.
+  { key: "cliq", en: "CliQ", ar: "كليك", icon: "📲", settled: true },
+];
+
+export const PAY_KEYS = PAYMENTS.map((p) => p.key);
+const PAY_BY_KEY = Object.fromEntries(PAYMENTS.map((p) => [p.key, p]));
+
+// A payment method reads as a WORD on a bill, never as a database key. Anything unknown
+// (a legacy row, 'refund') falls through unchanged rather than becoming an empty cell.
+export function payLabel(key, { icon = false } = {}) {
+  const p = PAY_BY_KEY[String(key || "").toLowerCase()];
+  if (!p) return String(key || "");
+  const word = ARABIC ? p.ar : p.en;
+  return icon ? `${p.icon} ${word}` : word;
+}
+
+export const isSettledPayment = (key) => {
+  const p = PAY_BY_KEY[String(key || "").toLowerCase()];
+  return !!(p && p.settled);
+};
+
 export const VIEWS = ["sales", "inventory", "receive", "history", "reports", "storereports", "assistant", "settings"];
 export const VIEW_LABELS = {
   sales: ARABIC ? "البيع" : "Sales",

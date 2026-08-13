@@ -1,6 +1,6 @@
 // Thermal receipt rendering. Writes the document into a hidden iframe and calls print(),
 // so it works with any OS-installed printer without a driver of our own.
-import { STORE_NAME, ARABIC, BILL, SELLER, TAX_RATE } from './client.config';
+import { STORE_NAME, ARABIC, BILL, SELLER, TAX_RATE, payLabel } from './client.config';
 import { escapeHtml } from './lib';
 
 // Build the receipt as { body, css } rather than one HTML blob.
@@ -64,7 +64,7 @@ function buildReceipt(sale) {
           <td class="amt">${(Number(sale.tax) || 0).toFixed(3)}</td></tr>` : ''}
         <tr class="tot"><td>TOTAL</td>
         <td class="amt">${(Number(sale.total) || 0).toFixed(3)}</td></tr>
-        <tr><td colspan="2" style="font-size:11px;padding-top:4px">Paid: ${escapeHtml(sale.pay || '')}</td></tr>
+        <tr><td colspan="2" style="font-size:11px;padding-top:4px">Paid: ${escapeHtml(payLabel(sale.pay))}</td></tr>
       </tfoot></table>
     <div class="ftr">${escapeHtml(thanks || '')}</div>`;
 

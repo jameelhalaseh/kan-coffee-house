@@ -330,6 +330,19 @@ describe('receipt view and edit', () => {
     expect(Number(rows[0].invoice_no)).toBe(42);
   });
 
+  test('a receipt can be corrected to CliQ, and to any method the till offers', async () => {
+    // The list is shared with the client (reporting/payments.js); this proves the API
+    // actually honours it rather than carrying a stale pair.
+    for (const pay of ['cash', 'card', 'cliq']) {
+      await aSale();
+      const res = await request(admin()).patch('/api/reports/main/receipts/r1').send({ pay });
+      expect(res.status).toBe(200);
+      const { rows } = await pool.query('select pay from orders_main where id = $1', ['r1']);
+      expect(rows[0].pay).toBe(pay);
+      await pool.query('delete from orders_main');
+    }
+  });
+
   test('an invalid payment method is refused', async () => {
     await aSale();
     const res = await request(admin()).patch('/api/reports/main/receipts/r1').send({ pay: 'crypto' });

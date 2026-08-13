@@ -21,7 +21,7 @@
 import React, { useEffect, useState } from 'react';
 import api from '../api';
 import { C, S } from '../theme';
-import { ARABIC, DEFAULT_FLOOR } from '../client.config';
+import { ARABIC, DEFAULT_FLOOR, PAY_KEYS, payLabel } from '../client.config';
 import { printReceipt, buildReceipt } from '../receipt';
 import {
   serialSupported, getPrintMode, isConnected, connectPrinter, printReceiptHTML, openDrawer,
@@ -145,13 +145,13 @@ function ReceiptModal({ receipt: r, isAdmin, onClose, onChanged, onGone, notify 
         {editing ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, borderTop: dashed, paddingTop: 10 }}>
             <div style={{ display: 'flex', gap: 8 }}>
-              {['cash', 'card'].map((m) => (
+              {PAY_KEYS.map((m) => (
                 <button key={m} onClick={() => setPay(m)} style={{
                   ...S.btn, flex: 1, padding: '10px 8px',
                   background: pay === m ? C.accent : '#eee',
                   color: pay === m ? C.accentText : PAPER.ink,
                   border: `1px solid ${pay === m ? C.accent : PAPER.rule}`,
-                }}>{m === 'cash' ? (ARABIC ? 'نقداً' : 'Cash') : (ARABIC ? 'بطاقة' : 'Card')}</button>
+                }}>{payLabel(m)}</button>
               ))}
             </div>
             <input value={buyer} onChange={(e) => setBuyer(e.target.value)}
