@@ -7,6 +7,9 @@ export const TOKEN_KEY = 'dukkan_token';
 // the token is the credential, and the API re-authorises every single request.
 export const USER_KEY = 'dukkan_user';
 export const HELD_KEY = 'dukkan_held_sales';      // parked carts
+// The last catalogue the server sent. Read ONLY when /products cannot be fetched, so the
+// sales screen has something to sell from during an outage — see src/catalog.js.
+export const CATALOG_KEY = 'dukkan_catalog';
 export const PENDING_KEY = 'dukkan_pending_sales'; // sales made offline, awaiting sync
 export const PAD_KEY = 'dukkan_show_cash_pad';     // cash keypad visibility preference
 export const BC_NAME = 'dukkan_pos';               // BroadcastChannel → customer display

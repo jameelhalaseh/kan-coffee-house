@@ -8,6 +8,7 @@ import {
 import { HELD_KEY, PAD_KEY, BC_NAME, DISPLAY_KEY } from '../constants';
 import { enqueue, flush as flushPending } from '../sync';
 import { useSync } from '../components/SyncBadge';
+import { saveCatalog, readCatalog, catalogAgeHours } from '../catalog';
 import printReceipt from '../receipt';
 import BillPaper, { billFromSale, PAPER } from '../components/BillPaper';
 import { beep } from '../sound';
@@ -62,8 +63,29 @@ function SalesView({ user, notify }) {
   }, []);
   useEffect(() => () => clearTimeout(flashTimer.current), []);
 
+  // The catalogue, with a local copy behind it.
+  //
+  // On success the list is cached; on a NETWORK failure the cached copy is used so the till
+  // can still sell. Without this the rest of the offline path was unreachable in practice:
+  // the shell loaded and the queue was ready, but the screen said "No products", and a till
+  // that cannot show a bottle cannot ring one.
+  //
+  // Only network failures fall back. A 401 means the session is gone and the right answer is
+  // the login screen, not a catalogue; serving products there would hide the real problem.
+  const [stale, setStale] = useState(null);   // { at } when showing a cached copy
   const loadProducts = useCallback(async () => {
-    try { setProducts(await api.get('/products')); } catch (_) {}
+    try {
+      const rows = await api.get('/products');
+      setProducts(rows);
+      setStale(null);
+      saveCatalog(rows);
+    } catch (ex) {
+      if (ex && typeof ex.status === 'number') return;   // the server answered; not an outage
+      const cached = readCatalog();
+      if (!cached) return;                                // nothing to fall back to
+      setProducts(cached.products);
+      setStale({ at: cached.at });
+    }
   }, []);
   useEffect(() => { loadProducts(); }, [loadProducts]);
   useEffect(() => { scanRef.current && scanRef.current.focus(); }, []);
@@ -290,6 +312,31 @@ function SalesView({ user, notify }) {
             </button>
           )}
         </div>
+
+        {/* Selling from the cached catalogue. The connection badge already says the server is
+            unreachable; this says what that means HERE — the prices are the last ones we were
+            given, and the stock figures are not live. Said plainly, because a cashier who
+            assumes the stock column is current will promise a customer a bottle that is not
+            on the shelf. */}
+        {stale && (
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', marginBottom: 10,
+            border: `1px solid ${C.accent}`, background: `${C.accent}1a`, borderRadius: 8,
+            color: C.accent, fontSize: 13, fontWeight: 700,
+          }}>
+            <span>⚠</span>
+            <span>
+              {ARABIC
+                ? 'قائمة محفوظة — المخزون غير محدّث. البيع يعمل وسيُزامن لاحقاً.'
+                : 'Saved catalogue — stock is not live. Selling still works and will sync.'}
+              {catalogAgeHours(stale.at) !== null && (
+                ARABIC
+                  ? ` (منذ ${catalogAgeHours(stale.at)} ساعة)`
+                  : ` (${catalogAgeHours(stale.at)}h old)`
+              )}
+            </span>
+          </div>
+        )}
 
         {/* Breadcrumb — only once you're inside a category (or searching across all of them). */}
         {!browsing && (
