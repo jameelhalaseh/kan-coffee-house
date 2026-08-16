@@ -48,10 +48,18 @@ services:
       timeout: 5s
       retries: 10
     # Postgres defaults assume a dedicated box. These suit a small shared VPS.
+    #
+    # max_connections is sized against the CLIENT STACKS, not against one app: every shop on
+    # this box connects here, so the ceiling is (shops × DB_POOL_MAX in server/db.js) plus
+    # room for psql, backups and the restore drill. At 5 per shop, 200 covers ~35 shops with
+    # slack — the two numbers move together, so change both or neither.
+    #
+    # Each connection costs a backend process (a few MB), so 200 is a ceiling, not a
+    # reservation; idle shops cost nothing.
     command: >
       postgres
       -c shared_buffers=256MB
-      -c max_connections=100
+      -c max_connections=200
       -c log_min_duration_statement=1000
 
 volumes:

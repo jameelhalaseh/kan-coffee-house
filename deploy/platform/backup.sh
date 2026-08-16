@@ -1,25 +1,66 @@
 #!/usr/bin/env bash
-# Nightly backup of every client database on this box.
+# Backup of every client database on this box. Two tiers:
 #
-# Heroku gave you this for free; on a VPS it is yours to run. Install once:
+#   daily  (default) — the keeper. Retained 14 days, runs once at 02:15.
+#   hourly (--hourly) — the damage limiter. Retained 3 days, runs through trading hours.
+#
+# WHY TWO TIERS. A once-nightly dump means a disk failure at 21:00 loses everything rung
+# since midnight — for an off-licence that is the entire trading day, the busiest hours
+# included, across every shop on the box. The tills hold unsynced sales locally (the app's
+# offline queue), but anything already synced is gone with the disk. Hourly dumps cut the
+# worst case from ~19 hours of sales to ~1. That is not the same guarantee as continuous WAL
+# archiving — pgBackRest with point-in-time recovery is the real answer and the right thing
+# to move to as shop count grows — but it is one cron line instead of a new component, and
+# it removes most of the exposure tonight.
+#
+# Hourly dumps are NOT retained for long on purpose: 17 dumps a day at 14 days' retention is
+# 238 copies per shop sitting on the same disk (and in the same bucket) as the daily ones,
+# which buys nothing. Three days is enough to notice a problem and reach for one.
+#
+# Install once:
 #   sudo cp deploy/platform/backup.sh /srv/platform/backup.sh && sudo chmod +x /srv/platform/backup.sh
 #   sudo crontab -e
-#   15 2 * * * /srv/platform/backup.sh >> /var/log/pos-backup.log 2>&1
+#   15 2 * * *          /srv/platform/backup.sh >> /var/log/pos-backup.log 2>&1
+#   0 10-23,0-2 * * *   /srv/platform/backup.sh --hourly >> /var/log/pos-backup.log 2>&1
+#
+# The hourly range is the SHOP's trading hours, not the clock's — dumping at 05:00 costs a
+# bucket write to capture nothing. Adjust the range per box; the hours above are a late-night
+# off-licence in Amman (cron runs in the host's timezone, so check `timedatectl`).
 #
 # Dumps land in ./backups (a bind mount inside the postgres container), then are pushed
 # offsite. A backup that only exists on the same disk as the database is not a backup —
 # fill in OFFSITE_CMD or you are one dead VPS away from losing every client's sales.
 set -euo pipefail
 
+TIER="daily"
+case "${1:-}" in
+  --hourly) TIER="hourly" ;;
+  --daily|"") ;;
+  *) echo "usage: $0 [--daily|--hourly]" >&2; exit 2 ;;
+esac
+
 PLATFORM_DIR="${PLATFORM_DIR:-/srv/platform}"
-BACKUP_DIR="$PLATFORM_DIR/backups"
-RETAIN_DAYS="${RETAIN_DAYS:-14}"
 STAMP="$(date +%Y%m%d-%H%M%S)"
+
+# Hourly dumps live in their own directory so the two tiers prune independently, and so the
+# restore drill (verify-restore.sh, -maxdepth 1) keeps testing the tier you actually keep.
+if [ "$TIER" = "hourly" ]; then
+  BACKUP_DIR="$PLATFORM_DIR/backups/hourly"
+  RETAIN_DAYS="${HOURLY_RETAIN_DAYS:-3}"
+else
+  BACKUP_DIR="$PLATFORM_DIR/backups"
+  RETAIN_DAYS="${RETAIN_DAYS:-14}"
+fi
 
 # Offsite push. Examples:
 #   OFFSITE_CMD='rclone copy {} b2:7uloul-pos-backups/'
 #   OFFSITE_CMD='aws s3 cp {} s3://7uloul-pos-backups/'
 # {} is replaced with the dump path.
+#
+# The command is eval'd, so $TIER expands here too — worth using, because it lets the bucket
+# expire the two tiers on different schedules instead of hoarding every hourly dump forever:
+#   OFFSITE_CMD='rclone copy {} b2:7uloul-pos-backups/$TIER/'
+# Quote it SINGLY in cron (as above) so the shell leaves $TIER for this script to expand.
 OFFSITE_CMD="${OFFSITE_CMD:-}"
 
 # Running local-only used to be the DEFAULT and it was silent: cron reported success every
@@ -48,12 +89,42 @@ if [ -z "$OFFSITE_CMD" ]; then
   echo "[backup] WARNING: local-only dumps (ALLOW_LOCAL_ONLY=1). These do NOT survive losing this box."
 fi
 
+# One backup at a time, across BOTH tiers. Without this the 02:15 daily run and an hourly
+# run can overlap on a slow night: two pg_dumps competing for the same disk make each other
+# slower, which makes the overlap likelier, and a shop feels it as a slow till. The hourly
+# run is the one that yields — skipping it is free, since another fires in an hour.
+#
+# The `command -v` check is not paranoia. Without it, a box missing flock takes the
+# "another backup is already running" branch on EVERY run and exits 0 — cron logs a green
+# line each hour while nothing is ever dumped. That is the same silent-success failure the
+# OFFSITE_CMD guard above exists to prevent, so a missing lock degrades to a loud warning
+# rather than a quiet skip. flock ships with util-linux and is present on Ubuntu 24.04.
+LOCKFILE="${LOCKFILE:-/tmp/pos-backup.lock}"
+if command -v flock >/dev/null 2>&1; then
+  exec 9>"$LOCKFILE"
+  if ! flock -n 9; then
+    echo "[backup] another backup is already running — skipping this ${TIER} run"
+    exit 0
+  fi
+else
+  echo "[backup] WARNING: flock not found — running unlocked. Concurrent tiers may overlap." >&2
+fi
+
 mkdir -p "$BACKUP_DIR"
 cd "$PLATFORM_DIR"
 
 # Every non-template database = every client.
+#
+# Except the restore drill's scratch databases. verify-restore.sh restores into
+# restore_drill_<client> and drops it again — but if a drill dies partway (a schema the dump
+# doesn't carry, a full disk, an interrupted ssh) the scratch database survives. Without this
+# filter it then looks exactly like a client forever: dumped every hour, shipped offsite,
+# and re-drilled into restore_drill_restore_drill_<client>, nesting one layer per run.
 DBS=$(docker compose exec -T postgres psql -U postgres -tAc \
-  "select datname from pg_database where datistemplate = false and datname <> 'postgres'")
+  "select datname from pg_database
+    where datistemplate = false
+      and datname <> 'postgres'
+      and datname not like 'restore\_drill\_%'")
 
 if [ -z "$DBS" ]; then
   echo "[backup] no client databases found — nothing to do"
@@ -86,8 +157,10 @@ for db in $DBS; do
   fi
 done
 
-echo "[backup] pruning local dumps older than ${RETAIN_DAYS} days"
-find "$BACKUP_DIR" -name '*.sql.gz' -mtime "+$RETAIN_DAYS" -delete
+# -maxdepth 1: the daily tier must not reach down into backups/hourly and prune it on the
+# daily schedule. Each tier owns its own directory and its own retention.
+echo "[backup] pruning local ${TIER} dumps older than ${RETAIN_DAYS} days"
+find "$BACKUP_DIR" -maxdepth 1 -name '*.sql.gz' -mtime "+$RETAIN_DAYS" -delete
 
 if [ "$FAILED" -ne 0 ]; then
   echo "[backup] COMPLETED WITH ERRORS"

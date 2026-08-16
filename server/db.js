@@ -16,9 +16,27 @@ if (!process.env.DATABASE_URL) {
 const sslEnv = (process.env.DATABASE_SSL || '').trim().toLowerCase();
 const useSsl = sslEnv ? sslEnv === 'true' : process.env.NODE_ENV === 'production';
 
+// POOL SIZE. pg's default max is 10 per process, which is fine for one app and wrong for a
+// shared box: every client stack on the VPS talks to the SAME Postgres, so the ceiling that
+// matters is (clients × max) against the server's max_connections. At the default that is
+// 15 shops × 10 = 150 against a server configured for 100 — the tenth shop to get busy
+// starts collecting "sorry, too many clients already", and it lands on whichever shop
+// happened to open last, not on the one causing it.
+//
+// 5 is ample here: the API is short queries against small tables, and a till holds a
+// connection for milliseconds. Raise it only with a measured reason, and raise
+// max_connections in deploy/platform/docker-compose.yml in the same change.
+const poolMax = Number(process.env.DB_POOL_MAX) || 5;
+
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: useSsl ? { rejectUnauthorized: false } : false,
+  max: poolMax,
+  // Hand idle connections back rather than holding five open per shop overnight.
+  idleTimeoutMillis: 30_000,
+  // Fail fast instead of hanging a request forever when the pool is drained or the DB is
+  // down — the caller gets a 5xx it can log, which is the alertable outcome.
+  connectionTimeoutMillis: 10_000,
 });
 
 pool.on('error', (err) => {

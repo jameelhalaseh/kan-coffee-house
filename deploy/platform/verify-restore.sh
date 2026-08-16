@@ -23,9 +23,16 @@ cd "$PLATFORM_DIR"
 psql_super() { docker compose exec -T postgres psql -U postgres "$@"; }
 
 # Which databases have dumps on disk.
+#
+# -maxdepth 1 keeps this on the DAILY tier. backup.sh --hourly writes into backups/hourly,
+# and those are the short-lived damage-limiting copies — the dump that has to be provably
+# restorable is the one retained for fourteen days. Drilling the hourly tier would also make
+# the age check below meaningless, since an hourly dump is never more than an hour old and
+# would report healthy on a box where the nightly cron had been dead for a week.
 mapfile -t DBS < <(
-  find "$BACKUP_DIR" -name '*.sql.gz' -printf '%f\n' 2>/dev/null \
-    | sed -E 's/-[0-9]{8}-[0-9]{6}\.sql\.gz$//' | sort -u
+  find "$BACKUP_DIR" -maxdepth 1 -name '*.sql.gz' -printf '%f\n' 2>/dev/null \
+    | sed -E 's/-[0-9]{8}-[0-9]{6}\.sql\.gz$//' | sort -u \
+    | grep -v '^restore_drill_' || true
 )
 if [ "${#DBS[@]}" -eq 0 ]; then
   echo "[drill] no dumps found in $BACKUP_DIR — has backup.sh ever run?"
@@ -36,7 +43,7 @@ FAILED=0
 for db in "${DBS[@]}"; do
   [ -n "$ONLY_DB" ] && [ "$db" != "$ONLY_DB" ] && continue
 
-  latest=$(find "$BACKUP_DIR" -name "${db}-*.sql.gz" | sort | tail -n1)
+  latest=$(find "$BACKUP_DIR" -maxdepth 1 -name "${db}-*.sql.gz" | sort | tail -n1)
   [ -z "$latest" ] && continue
 
   # Age check: a dump that stopped refreshing is as bad as no dump, and cron failures are
@@ -62,16 +69,25 @@ for db in "${DBS[@]}"; do
 
   # Restoring without error is necessary but not sufficient — an empty schema restores
   # perfectly. Assert the tables that carry the money are actually populated.
-  read -r products orders users < <(
-    psql_super -tAF' ' -d "$scratch" -c \
-      "select (select count(*) from products), (select count(*) from orders_main), (select count(*) from app_users)" \
-      | tr -d '\r'
-  )
-  echo "[drill] $db restored: ${products} products, ${orders} orders, ${users} users"
+  # `|| true`: under `set -e` a failing count query kills the whole script HERE, before the
+  # drop below, leaving restore_drill_<client> behind — which backup.sh then treats as a
+  # client and dumps forever. The query failing is itself a finding (a dump missing the money
+  # tables is a bad dump), so it must be reported and cleaned up, not fatal.
+  counts=$(psql_super -tAF' ' -d "$scratch" -c \
+    "select (select count(*) from products), (select count(*) from orders_main), (select count(*) from app_users)" \
+    2>&1 | tr -d '\r') || true
+  read -r products orders users <<<"$counts"
 
-  if [ "${users:-0}" -lt 1 ] || [ "${products:-0}" -lt 1 ]; then
-    echo "[drill] FAILED: $db restored but looks empty — the dump is not usable"
+  if [ -z "${users:-}" ] || ! [ "${users}" -ge 0 ] 2>/dev/null; then
+    echo "[drill] FAILED: $db restored but the money tables could not be counted:"
+    echo "        $counts"
     FAILED=1
+  else
+    echo "[drill] $db restored: ${products} products, ${orders} orders, ${users} users"
+    if [ "${users:-0}" -lt 1 ] || [ "${products:-0}" -lt 1 ]; then
+      echo "[drill] FAILED: $db restored but looks empty — the dump is not usable"
+      FAILED=1
+    fi
   fi
 
   psql_super -c "drop database if exists \"$scratch\" with (force)" >/dev/null
