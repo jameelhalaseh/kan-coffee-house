@@ -46,6 +46,11 @@
         .toast-in{animation:none;}
         .rise{animation:none;}
       }
+      /* The sync light, while a flush is in flight. Only the SYNCING state animates: motion
+         on the resting state would make the thing cashiers are meant to stop noticing the
+         most noticeable element on the screen. */
+      @keyframes sync-pulse{0%,100%{opacity:1;}50%{opacity:.25;}}
+      @media (prefers-reduced-motion:reduce){ [style*="sync-pulse"]{animation:none !important;} }
       input:focus{border-color:var(--accent) !important;box-shadow:0 0 0 2px rgba(240,168,48,.2);}
       /* The night theme lightens a button on hover; on a white panel that washes it out, so
          day darkens instead. */

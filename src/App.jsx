@@ -13,6 +13,7 @@ import { ARABIC, VIEWS } from './client.config';
 import { C } from './theme';
 import { TOKEN_KEY, USER_KEY } from './constants';
 import { sessionAction, readCachedUser, SESSION_OFFLINE, SESSION_LOGOUT } from './session';
+import { start as startSync } from './sync';
 
 import Sidebar from './components/Sidebar';
 import CustomerDisplay from './components/CustomerDisplay';
@@ -47,6 +48,20 @@ export default function App() {
     window.addEventListener('offline', down);
     return () => { window.removeEventListener('online', up); window.removeEventListener('offline', down); };
   }, []);
+
+  // The offline queue and the connection light. Started here, in the shell, so the badge in
+  // the sidebar works on every screen and queued sales keep retrying no matter which view
+  // the cashier is looking at.
+  //
+  // Deliberately keyed on `user` and not run on mount. Effects fire in declaration order, so
+  // starting this at mount ran the first flush BEFORE the session-restore effect below had
+  // called api.setToken() — every queued sale went out unauthenticated, came back 401, and
+  // the queue stalled showing "Pending" with a server that was up and a till that was
+  // logged in. Waiting for a session costs nothing: there is nobody to sync for until then.
+  useEffect(() => {
+    if (!user) return undefined;
+    return startSync();
+  }, [user]);
 
   // Messages STACK. Every call adds one; nothing replaces anything. A failure and a success
   // that land together are both readable, which is the whole point — the previous single-slot

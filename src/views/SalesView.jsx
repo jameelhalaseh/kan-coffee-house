@@ -5,7 +5,9 @@ import { ARABIC, STORE_NAME, DEFAULT_FLOOR, TAX_RATE, PAYMENTS } from '../client
 import {
   money, amount, r3, splitInclusiveTax, uid, nowParts, cashSuggestions, catColor,
 } from '../lib';
-import { HELD_KEY, PENDING_KEY, PAD_KEY, BC_NAME, DISPLAY_KEY } from '../constants';
+import { HELD_KEY, PAD_KEY, BC_NAME, DISPLAY_KEY } from '../constants';
+import { enqueue, flush as flushPending } from '../sync';
+import { useSync } from '../components/SyncBadge';
 import printReceipt from '../receipt';
 import BillPaper, { billFromSale, PAPER } from '../components/BillPaper';
 import { beep } from '../sound';
@@ -14,7 +16,6 @@ import { categoryCards, inCat, CategoryGrid, CategoryHeader, catTitle } from '..
 import ProductModal from '../components/ProductModal';
 
 
-const readPending = () => { try { return JSON.parse(localStorage.getItem(PENDING_KEY)) || []; } catch (_) { return []; } };
 // Network failure = fetch rejected before a response (our api errors always carry .status).
 const isNetworkError = (ex) => ex && ex.status === undefined;
 
@@ -177,42 +178,25 @@ function SalesView({ user, notify }) {
   };
 
   // ── Offline sales queue ────────────────────────────────────────────────────
-  // A checkout that can't reach the server is stored locally (without an invoice
-  // number) and synced automatically when the connection returns. Sync is serial
-  // and stops on the first failure, so order is preserved and nothing is lost.
-  const [pending, setPending] = useState(readPending);
-  const persistPending = (list) => { setPending(list); localStorage.setItem(PENDING_KEY, JSON.stringify(list)); };
-  const syncingRef = useRef(false);
+  // The queue itself now lives in src/sync.js, started once by the shell, because it has to
+  // keep draining while a cashier is on any screen — and because the connection light in the
+  // sidebar reads the same state. This view is one surface onto it, not its owner.
+  const sync = useSync();
+  const pending = sync.pending;
+  const syncPending = useCallback(() => { flushPending(); }, []);
 
-  const syncPending = useCallback(async () => {
-    if (syncingRef.current) return;
-    syncingRef.current = true;
-    try {
-      let list = readPending();
-      let synced = 0;
-      while (list.length) {
-        const s = list[0];
-        try {
-          const invoice_no = await api.get('/invoice/next?floor=' + DEFAULT_FLOOR);
-          await api.post('/orders', { ...s, invoice_no });
-        } catch (ex) { break; }   // still unreachable (or rejected) — retry on next online event
-        list = list.slice(1);
-        synced += 1;
-        localStorage.setItem(PENDING_KEY, JSON.stringify(list));
-      }
-      setPending(list);
-      if (synced) {
-        notify(ARABIC ? `تمت مزامنة ${synced} فاتورة معلّقة` : `Synced ${synced} offline sale${synced > 1 ? 's' : ''}`, 'green');
-        loadProducts();
-      }
-    } finally { syncingRef.current = false; }
-  }, [notify, loadProducts]);
-
+  // React to a flush that landed: tell the cashier, and pull the stock levels the server
+  // just changed. syncedTick bumps once per flush, so this fires once however many sales
+  // went through.
+  const seenTick = useRef(sync.syncedTick);
   useEffect(() => {
-    syncPending();   // flush anything left over from a previous session
-    window.addEventListener('online', syncPending);
-    return () => window.removeEventListener('online', syncPending);
-  }, [syncPending]);
+    if (sync.syncedTick === seenTick.current) return;
+    seenTick.current = sync.syncedTick;
+    const n = sync.lastSyncedCount;
+    if (!n) return;
+    notify(ARABIC ? `تمت مزامنة ${n} فاتورة معلّقة` : `Synced ${n} offline sale${n > 1 ? 's' : ''}`, 'green');
+    loadProducts();
+  }, [sync.syncedTick, sync.lastSyncedCount, notify, loadProducts]);
 
   const checkout = async () => {
     if (!cart.length || busy) return;
@@ -242,7 +226,7 @@ function SalesView({ user, notify }) {
     } catch (ex) {
       if (isNetworkError(ex)) {
         // No server — keep the sale locally, print an OFFLINE receipt, move on.
-        persistPending([...readPending(), sale]);
+        enqueue(sale);
         finish({ ...sale, invoice_no: ARABIC ? 'غير متصل' : 'OFFLINE' });
         notify(ARABIC ? 'لا اتصال — حُفظت الفاتورة محلياً وستُزامن تلقائياً' : 'Offline — sale saved locally, will sync automatically', 'green');
       } else {

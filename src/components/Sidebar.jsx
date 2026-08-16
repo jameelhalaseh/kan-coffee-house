@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import api from '../api';
 import { C, S, IS_DAY, toggleTheme } from '../theme';
 import { ARABIC, STORE_NAME, VIEW_LABELS, toggleLang } from '../client.config';
+import SyncBadge from './SyncBadge';
 
 const VIEW_ICONS = { sales: '🛒', inventory: '📦', receive: '📥', history: '🧾', reports: '📊', storereports: '📈', assistant: '🤖', settings: '⚙️' };
 
@@ -102,6 +103,9 @@ function Sidebar({ user, view, setView, navViews, onLogout, canSeeStock, onChang
       <div style={{ flex: 1 }} />
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10, borderTop: `1px solid ${C.line}`, paddingTop: 12 }}>
+        {/* Visible on every screen, not just Sales: a cashier checking History still needs to
+            know whether the till is getting through. */}
+        <SyncBadge />
         {canSeeStock && <NotificationsBell />}
         <ClockButton />
         <div style={{ display: 'flex', gap: 10 }}>

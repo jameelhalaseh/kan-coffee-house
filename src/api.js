@@ -22,15 +22,38 @@ export function getToken() { return _token; }
 let _onExpired = null;
 export function setOnSessionExpired(fn) { _onExpired = fn; }
 
+// Every request reports whether the SERVER ANSWERED — true for any response at all, 4xx and
+// 5xx included, false only when the fetch itself never completed. src/sync.js turns that into
+// the connection light on the till.
+//
+// This is reported here, at the one place every call passes through, because the alternative
+// (navigator.onLine) answers a different question: whether the device has a network
+// interface. A router with no uplink says online, and so does a dead server. Only the
+// outcome of a real request to OUR server knows.
+let _onNetworkResult = null;
+export function setOnNetworkResult(fn) { _onNetworkResult = fn; }
+function reportNetwork(answered) {
+  if (_onNetworkResult) { try { _onNetworkResult(answered); } catch (_) { /* never break a request */ } }
+}
+
 async function req(method, path, body) {
-  const res = await fetch(BASE + '/api' + path, {
-    method,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(_token ? { Authorization: 'Bearer ' + _token } : {}),
-    },
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-  });
+  let res;
+  try {
+    res = await fetch(BASE + '/api' + path, {
+      method,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(_token ? { Authorization: 'Bearer ' + _token } : {}),
+      },
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    });
+  } catch (e) {
+    // No response at all: DNS, refused, timed out, aeroplane mode. Rethrown unchanged so
+    // callers keep seeing an error with no `.status`, which is how they tell the two apart.
+    reportNetwork(false);
+    throw e;
+  }
+  reportNetwork(true);
   const text = await res.text();
   let data = null;
   if (text) { try { data = JSON.parse(text); } catch { data = text; } }
@@ -51,9 +74,16 @@ async function req(method, path, body) {
 // them into an object URL. Shares the 401-session handling above; everything else about it
 // is deliberately minimal, because it is the only non-JSON response in the API.
 async function getBlob(path) {
-  const res = await fetch(BASE + '/api' + path, {
-    headers: { ...(_token ? { Authorization: 'Bearer ' + _token } : {}) },
-  });
+  let res;
+  try {
+    res = await fetch(BASE + '/api' + path, {
+      headers: { ...(_token ? { Authorization: 'Bearer ' + _token } : {}) },
+    });
+  } catch (e) {
+    reportNetwork(false);
+    throw e;
+  }
+  reportNetwork(true);
   if (!res.ok) {
     if (res.status === 401 && _token && _onExpired) {
       try { _onExpired(); } catch (_) { /* never let the handler mask the original error */ }
@@ -78,6 +108,7 @@ const realApi = {
   setToken,
   getToken,
   setOnSessionExpired,
+  setOnNetworkResult,
 };
 
 // DEMO build (GitHub Pages, no backend): swap in the in-browser mock API. Flag is set
