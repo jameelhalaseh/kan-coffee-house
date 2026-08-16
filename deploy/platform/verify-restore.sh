@@ -18,6 +18,33 @@ PLATFORM_DIR="${PLATFORM_DIR:-/srv/platform}"
 BACKUP_DIR="$PLATFORM_DIR/backups"
 ONLY_DB="${1:-}"
 
+# A drill that fails silently is worse than no drill: it is a monthly cron line reporting
+# success while the backups it checks are unrestorable. Same webhook and shape as backup.sh
+# and the API's own alerts.
+ALERT_WEBHOOK_URL="${ALERT_WEBHOOK_URL:-}"
+
+notify() {
+  [ -n "$ALERT_WEBHOOK_URL" ] || return 0
+  command -v curl >/dev/null 2>&1 || return 0
+  curl -fsS --max-time 10 -X POST -H 'Content-Type: application/json' \
+    -d "{\"text\":\"[ALERT] pos-restore-drill: $1\n$2\",\"service\":\"pos-restore-drill\",\"title\":\"$1\"}" \
+    "$ALERT_WEBHOOK_URL" >/dev/null 2>&1 || echo "[drill] WARNING: alert delivery failed"
+  return 0
+}
+
+# Any nonzero exit, for the same reason as backup.sh: this script dies under `set -e` well
+# before its own failure branch if Docker is down or there are no dumps at all, and "no
+# dumps exist" is precisely the state you must hear about.
+on_exit() {
+  rc=$?
+  if [ "$rc" -ne 0 ]; then
+    notify "restore drill FAILED (exit ${rc})" \
+      "Backups on $(hostname) could not be verified - they cannot currently be trusted. See /var/log/pos-restore-drill.log."
+  fi
+  exit "$rc"
+}
+trap on_exit EXIT
+
 cd "$PLATFORM_DIR"
 
 psql_super() { docker compose exec -T postgres psql -U postgres "$@"; }
@@ -94,6 +121,7 @@ for db in "${DBS[@]}"; do
 done
 
 if [ "$FAILED" -ne 0 ]; then
+  # The EXIT trap sends the alert — see backup.sh for why it lives there.
   echo "[drill] COMPLETED WITH ERRORS"
   exit 1
 fi

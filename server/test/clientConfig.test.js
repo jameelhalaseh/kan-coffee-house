@@ -213,6 +213,50 @@ describe('GET /client-config.js', () => {
   });
 });
 
+describe('health endpoints', () => {
+  // The two must not converge. If /healthz ever starts checking the database, Docker's
+  // HEALTHCHECK begins restarting the container over a dependency it cannot fix; if /readyz
+  // ever stops checking it, monitoring goes green during an outage.
+  test('/healthz is liveness only — it answers without touching the database', async () => {
+    const app = require('../index');
+    const res = await request(app).get('/healthz');
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ status: 'ok' });
+  });
+
+  test('/readyz reports ready when the database answers', async () => {
+    const app = require('../index');
+    const res = await request(app).get('/readyz');
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe('ready');
+  });
+
+  test('/readyz is 503 when the database does not answer, and leaks nothing', async () => {
+    jest.resetModules();
+    // Stand in for an unreachable database. A rejected query is the honest simulation: the
+    // pool is what fails first when Postgres is down.
+    jest.doMock('../db', () => ({
+      query: jest.fn(),
+      pool: { query: () => Promise.reject(new Error('connect ECONNREFUSED 10.0.0.5:5432')) },
+    }));
+    const app = require('../index');
+    const res = await request(app).get('/readyz');
+    expect(res.status).toBe(503);
+    expect(res.body).toEqual({ status: 'degraded', error: 'database' });
+    // The host and port of the database are not the caller's business — this endpoint takes
+    // no authentication.
+    expect(JSON.stringify(res.body)).not.toMatch(/ECONNREFUSED|10\.0\.0\.5|5432/);
+    jest.dontMock('../db');
+    jest.resetModules();
+  });
+
+  test('/readyz is never cached — a stale 200 would mask an outage', async () => {
+    const app = require('../index');
+    const res = await request(app).get('/readyz');
+    expect(res.headers['cache-control']).toMatch(/no-store/);
+  });
+});
+
 describe('GET /manifest.json', () => {
   test('names the installed PWA after this shop, not after the template', async () => {
     const saved = process.env.CLIENT_STORE_NAME;

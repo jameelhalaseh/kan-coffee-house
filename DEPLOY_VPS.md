@@ -216,10 +216,19 @@ tag; a shared `latest` would move all thirty at once, on whatever schedule Docke
 ```bash
 sudo crontab -e
 OFFSITE='rclone copy {} b2:7uloul-pos-backups/$TIER/'
+ALERT_WEBHOOK_URL=https://ntfy.sh/<your-secret-topic>
 15 2 * * *         OFFSITE_CMD="$OFFSITE" /srv/platform/backup.sh          >> /var/log/pos-backup.log 2>&1
 0 10-23,0-2 * * *  OFFSITE_CMD="$OFFSITE" /srv/platform/backup.sh --hourly >> /var/log/pos-backup.log 2>&1
 45 2 1 * *         /srv/platform/verify-restore.sh                         >> /var/log/pos-restore-drill.log 2>&1
 ```
+
+`ALERT_WEBHOOK_URL` is the same webhook the API posts 5xx and crashes to, so backup and
+drill failures land in the same place. **Set it.** Without it a failing backup exits 1 into
+cron's mail, which nobody reads — a backup that fails silently every night is
+indistinguishable from one that works, and you find out which it was on the night you need
+to restore. Both scripts alert on *any* nonzero exit, not just a failed dump, because the
+likeliest failures (Docker down, disk full, postgres container stopped) kill them before
+they reach their own error branch.
 
 Dumps every client database, gzips it, and **fails loudly** if a dump comes back
 suspiciously small. Set `OFFSITE_CMD` — a backup sitting on the same disk as the database
@@ -251,9 +260,24 @@ into a scratch database. An untested backup is a hypothesis.
 
 ## 8. Monitoring
 
+**Point external checks at `/readyz`, not `/healthz`.** They answer different questions and
+the difference matters at 9pm:
+
+| | checks | who uses it |
+|---|---|---|
+| `/healthz` | the process is up, nothing else | Docker's `HEALTHCHECK` |
+| `/readyz` | the process is up **and the database answers** | Uptime Kuma, you |
+
+`/healthz` deliberately does not touch Postgres. If it did, Docker would restart the
+container over a database outage it cannot fix — killing the process that would have served
+the shop the moment the database came back. `/readyz` returns 503 with
+`{"status":"degraded","error":"database"}` instead, so the outage is visible without
+anything being restarted over it. Neither endpoint needs auth; successful probes are kept
+out of the request log so they cannot bury the history you search during an incident.
+
 Uptime Kuma in a container, or any external checker, hitting
-`https://liquor.7uloultech.com/healthz` (returns `{"status":"ok"}`, no auth) per client.
-Alert to whatever you actually read.
+`https://<client>.7uloultech.com/readyz` per client. Alert to whatever you actually read —
+the same ntfy/Discord webhook as `ALERT_WEBHOOK_URL` is the obvious choice.
 
 ---
 

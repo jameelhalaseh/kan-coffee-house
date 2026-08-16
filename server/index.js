@@ -115,7 +115,48 @@ app.use(['/api/reports', '/api/ai/insights', '/api/timeclock', '/api/jofotara/pe
 // while a scripted flood hits the ceiling immediately.
 app.use('/api', limiter(5 * 60 * 1000, envMax('API_RATE_LIMIT_MAX', 1200)));
 
+// ── Health: two endpoints, because they answer two different questions ────────
+//
+// /healthz — LIVENESS. "Is this process up?" Nothing else. This is what Docker's
+// HEALTHCHECK uses, and it must NOT check the database: restarting the app because
+// Postgres is unreachable cannot fix Postgres, and it kills the process that would have
+// served the shop the moment the database came back. A dependency outage would become a
+// restart loop that makes the outage longer.
+//
+// /readyz — READINESS. "Can this shop actually sell right now?" This is what external
+// monitoring (Uptime Kuma et al) should watch. It reaches the database, so it goes red
+// during an outage without anything being restarted over it.
+//
+// Splitting them is the difference between a monitor you trust at 9pm and one that reported
+// green while every checkout was failing — which is worse than no monitor at all.
 app.get('/healthz', (_req, res) => res.json({ status: 'ok' }));
+
+const { pool } = require('./db');
+app.get('/readyz', async (_req, res) => {
+  res.set('Cache-Control', 'no-store');
+  let timer;
+  try {
+    // A database that accepts the connection and then never answers is a real failure mode
+    // (saturated pool, locked table) and it must read as "not ready", not as a check that
+    // hangs until the monitor's own timeout and reports something vaguer.
+    await Promise.race([
+      pool.query('select 1'),
+      new Promise((_resolve, reject) => {
+        timer = setTimeout(() => reject(new Error('database did not answer in 3s')), 3000);
+      }),
+    ]);
+    res.json({ status: 'ready' });
+  } catch (e) {
+    // Logged, not alerted: whatever is polling this endpoint is the thing that should page
+    // someone. Alerting here as well would double-notify on every blip.
+    log.warn('readiness check failed', { error: e.message });
+    // No internals to the caller — this endpoint is reachable without auth.
+    res.status(503).json({ status: 'degraded', error: 'database' });
+  } finally {
+    clearTimeout(timer);
+  }
+});
+
 app.use('/api', require('./routes'));
 
 // ── Per-client identity, handed to the browser at RUNTIME ─────────────────────

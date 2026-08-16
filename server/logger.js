@@ -87,10 +87,19 @@ function requestLogger(req, res, next) {
 
   res.on('finish', () => {
     const ms = Number(process.hrtime.bigint() - started) / 1e6;
+    const route = req.originalUrl.split('?')[0];   // query strings can carry filters, not secrets — still dropped
+
+    // A health probe that SUCCEEDED is not news, and there are a lot of them: Docker polls
+    // /healthz every 30s and an uptime monitor polls /readyz about as often, so a quiet shop
+    // still writes thousands of identical lines a day. With the log capped at 10m x 3 files
+    // per container, that noise is what evicts the request history you actually want during
+    // an incident. Failures still log — those are the whole point of probing.
+    if ((route === '/healthz' || route === '/readyz') && res.statusCode < 400) return;
+
     const fields = {
       req: id,
       method: req.method,
-      route: req.originalUrl.split('?')[0],   // query strings can carry filters, not secrets — still dropped
+      route,
       status: res.statusCode,
       ms: Math.round(ms),
       user: (req.user && req.user.username) || null,

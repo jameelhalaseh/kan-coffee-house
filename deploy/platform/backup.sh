@@ -63,6 +63,41 @@ fi
 # Quote it SINGLY in cron (as above) so the shell leaves $TIER for this script to expand.
 OFFSITE_CMD="${OFFSITE_CMD:-}"
 
+# Where a failure goes. Same webhook the API uses for 5xx and crashes (ALERT_WEBHOOK_URL in
+# the client .env files), and the same JSON shape, so Slack/Discord/ntfy render it without
+# extra configuration.
+#
+# WHY: exiting 1 sends the reason to cron, which mails root, which nobody reads. A backup
+# that fails silently every night is indistinguishable from one that works, and you find out
+# which it was on the night you need to restore. This is the same failure the OFFSITE_CMD
+# guard exists to prevent, one layer up.
+ALERT_WEBHOOK_URL="${ALERT_WEBHOOK_URL:-}"
+
+notify() {
+  [ -n "$ALERT_WEBHOOK_URL" ] || return 0
+  command -v curl >/dev/null 2>&1 || return 0
+  # Never let alerting failure change the script's own outcome: the backup result is what
+  # matters, and a webhook that is down must not turn a good run into a bad exit code.
+  curl -fsS --max-time 10 -X POST -H 'Content-Type: application/json' \
+    -d "{\"text\":\"[ALERT] pos-backup: $1\n$2\",\"service\":\"pos-backup\",\"title\":\"$1\"}" \
+    "$ALERT_WEBHOOK_URL" >/dev/null 2>&1 || echo "[backup] WARNING: alert delivery failed"
+  return 0
+}
+
+# On ANY nonzero exit, not just a failed pg_dump. Under `set -e` this script can die long
+# before the dump loop — Docker not running, the postgres container down, the wrong
+# PLATFORM_DIR, a full disk — and those are the likeliest real failures. Alerting only at
+# the end would mean the loudest cases were the silent ones.
+on_exit() {
+  rc=$?
+  if [ "$rc" -ne 0 ]; then
+    notify "backup FAILED (${TIER}, exit ${rc})" \
+      "Backups did not complete on $(hostname). See /var/log/pos-backup.log."
+  fi
+  exit "$rc"
+}
+trap on_exit EXIT
+
 # Running local-only used to be the DEFAULT and it was silent: cron reported success every
 # night while every copy sat on the same disk as the database it was protecting. One dead
 # VPS and every client's sales are gone, with fourteen days of green log lines behind it.
@@ -163,6 +198,8 @@ echo "[backup] pruning local ${TIER} dumps older than ${RETAIN_DAYS} days"
 find "$BACKUP_DIR" -maxdepth 1 -name '*.sql.gz' -mtime "+$RETAIN_DAYS" -delete
 
 if [ "$FAILED" -ne 0 ]; then
+  # The EXIT trap turns this into the alert; no second notify here, or a partial failure
+  # would page twice.
   echo "[backup] COMPLETED WITH ERRORS"
   exit 1
 fi
