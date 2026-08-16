@@ -1,0 +1,20 @@
+# BUILD OVERRIDE — adds the local build back on top of docker-compose.yml.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
+#
+# The normal path pulls a tagged image that CI built once for every client. Use this when
+# there is no registry to pull from, when testing a change that has not been released yet,
+# or on a laptop. It builds the SAME image the registry would hold — the bundle carries no
+# client-specific values any more (server/clientConfig.js supplies those at runtime), so a
+# locally built image is interchangeable with the published one.
+#
+# POS_IMAGE still applies and becomes the tag the build is written to, so keep pinning it to
+# something specific (`liquor-pos:dev` is fine locally). Tagging a local build as the same
+# version string CI publishes is how you end up with two different images claiming one tag
+# and no way to tell which a shop is running.
+
+services:
+  app:
+    build:
+      context: ..
+      dockerfile: Dockerfile

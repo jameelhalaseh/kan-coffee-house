@@ -95,6 +95,40 @@ This creates the `web` and `data` networks that client stacks attach to.
 
 ## 5. Per client
 
+One command. It creates the database and a role scoped to it, writes the client folder and
+a `chmod 600` `.env`, appends and **validates** a Caddy block (restoring the Caddyfile if it
+does not validate, so a typo cannot take the edge down for everyone else), starts the app,
+and reloads Caddy:
+
+```bash
+# Once per box: a checkout the generator copies its compose files from.
+sudo git clone <your-repo> /srv/platform/template
+
+cd /srv/platform
+TEMPLATE_DIR=/srv/platform/template/deploy ./new-client.sh \
+  --key dukkan \
+  --domain dukkan.7uloultech.com \
+  --name "Dukkan Al Balad" \
+  --image ghcr.io/<owner>/liquor-store-pos:<sha> \
+  --tax 16 --prefix DK --location "Irbid, Jordan" --tax-no 9988776
+```
+
+`--key` becomes the database, the role, the compose project, the container name
+(`dukkan-pos-app`) and the folder — which is what stops the failure the old copy-a-folder
+flow invited, where two clients both claimed `liquor-pos:latest` and `liquor-pos-app` and
+the second `docker compose up` silently adopted the first shop's image.
+
+It **refuses rather than overwrites**: an existing `.env` or an existing Caddy block for
+that domain stops it. Re-running would mint a new database password while the running
+container still held the old one.
+
+Pin `--image` to a real tag (a commit sha or `vX.Y.Z`), never `latest` — with one image
+serving every shop, a moving tag means a restart can silently change which build a till is
+running. CI prints the exact line to pin at the end of each publish.
+
+<details>
+<summary>Doing it by hand instead</summary>
+
 ```bash
 # 5a. Database + a role scoped to just that database. Prints the DATABASE_URL once.
 cd /srv/platform && ./new-client-db.sh liquorpos
@@ -109,12 +143,40 @@ DATABASE_URL=postgres://liquorpos:<from step 5a>@postgres:5432/liquorpos
 SESSION_TTL_HOURS=12
 NVIDIA_API_KEY=
 AI_LOW_STOCK_THRESHOLD=5
+
+# This shop's identity. The bundle is generic; these make it theirs.
+STORE_TZ=Asia/Amman
+CLIENT_STORE_NAME=Dukkan Al Balad
+CLIENT_TAX_PCT=16
+CLIENT_INVOICE_PREFIX=DK
+CLIENT_SELLER_LOCATION=Irbid, Jordan
+CLIENT_SELLER_TAX_NO=9988776
 EOF
 chmod 600 .env
 
-docker compose up -d --build     # entrypoint applies migrations, then serves
+# CLIENT_KEY and POS_IMAGE are required — the compose file refuses to interpolate without
+# them rather than guessing a container name or an image tag.
+echo 'CLIENT_KEY=liquor' >> .env
+echo 'POS_IMAGE=ghcr.io/<owner>/liquor-store-pos:<sha>' >> .env
+
+docker compose up -d             # entrypoint applies migrations, then serves
 docker compose logs -f app
 ```
+
+Then add the Caddy block by hand and reload.
+
+</details>
+
+**The shop's name, VAT rate and receipt identity are env, not code.** The API serves them to
+the browser at boot (`GET /client-config.js` → `window.__CLIENT__`), so the same build works
+for every client — see `.env.example` for the full list. Anything left unset keeps the
+shipped Liquor Store default; anything set to an invalid value (`CLIENT_TAX_PCT=sixteen`)
+stops the container starting rather than silently printing a wrong VAT line on every
+receipt. Changing a value is an `.env` edit plus `docker compose up -d`, with no rebuild.
+
+`STORE_TZ` is now the *only* place the trading-day clock is set — the till reads it from the
+server, so the browser and the reports cannot disagree about which day a late-night sale
+belongs to.
 
 Seed the staff and catalogue (passwords only ever exist in the command you type):
 
@@ -124,42 +186,68 @@ docker compose exec -e USERS_JSON='[{"username":"cashier","password":"<choose>",
 docker compose exec app node server/seed-products.js      # demo catalogue; skip for a real client
 ```
 
-Then add the client to `/srv/platform/Caddyfile` and reload with **no downtime for anyone
-else**:
-
-```bash
-docker compose -f /srv/platform/docker-compose.yml exec caddy \
-  caddy reload --config /etc/caddy/Caddyfile
-```
-
-Open `https://liquor.7uloultech.com`.
+Open `https://dukkan.7uloultech.com`.
 
 ## 6. Deploying a change
 
+Push to `main`. CI runs both suites and, only if they pass, builds and pushes **one** image
+to GHCR tagged with the commit sha. Nothing on the VPS builds anything.
+
+Then move a shop onto it — one shop at a time, which is the point:
+
 ```bash
-cd /srv/clients/liquor && git pull
-cd deploy && docker compose up -d --build
+cd /srv/clients/dukkan/deploy
+sed -i 's|^POS_IMAGE=.*|POS_IMAGE=ghcr.io/<owner>/liquor-store-pos:<new-sha>|' .env
+docker compose up -d          # pulls, migrates on boot, restarts
 ```
 
-Migrations apply automatically on boot. Roll back with `git checkout <sha>` and the same
-command — one client only.
+Roll that one shop back by putting the previous sha in `.env` and running the same command.
+No other client is touched, and no rebuild happens anywhere.
+
+Migrations apply automatically on boot — both ledgers, `server/migrations` and
+`reporting/migrations`.
+
+**Staged rollout.** With thirty shops on one image, put a new sha on one quiet shop first,
+leave it a day, then move the rest. That is only possible because each `.env` pins its own
+tag; a shared `latest` would move all thirty at once, on whatever schedule Docker felt like.
 
 ## 7. Backups (do this on day one)
 
 ```bash
 sudo crontab -e
-15 2 * * * OFFSITE_CMD='rclone copy {} b2:7uloul-pos-backups/' /srv/platform/backup.sh >> /var/log/pos-backup.log 2>&1
+OFFSITE='rclone copy {} b2:7uloul-pos-backups/$TIER/'
+15 2 * * *         OFFSITE_CMD="$OFFSITE" /srv/platform/backup.sh          >> /var/log/pos-backup.log 2>&1
+0 10-23,0-2 * * *  OFFSITE_CMD="$OFFSITE" /srv/platform/backup.sh --hourly >> /var/log/pos-backup.log 2>&1
+45 2 1 * *         /srv/platform/verify-restore.sh                         >> /var/log/pos-restore-drill.log 2>&1
 ```
 
-Dumps every client database, gzips it, prunes local copies after 14 days, and **fails
-loudly** if a dump comes back suspiciously small. Set `OFFSITE_CMD` — a backup sitting on
-the same disk as the database is not a backup.
+Dumps every client database, gzips it, and **fails loudly** if a dump comes back
+suspiciously small. Set `OFFSITE_CMD` — a backup sitting on the same disk as the database
+is not a backup.
+
+**Why the second line.** With only the nightly run, a disk failure at 21:00 loses every
+sale rung since midnight, for every shop on the box — an off-licence's whole trading day,
+peak hours included. The tills keep unsynced sales in the browser's offline queue, but
+anything already synced dies with the disk. Hourly dumps during trading hours cut the worst
+case from ~19 hours to ~1.
+
+The two tiers are separate: daily lands in `backups/` and is kept 14 days; hourly lands in
+`backups/hourly/` and is kept 3 (`HOURLY_RETAIN_DAYS`). They share a lock, so they never run
+on top of each other. Set the hour range to **the shop's** trading hours — the range above
+is a late-night Amman off-licence, and cron uses the host's timezone (`timedatectl`).
+
+This is not point-in-time recovery. **pgBackRest with continuous WAL archiving** is the real
+answer and gets the window to seconds; move to it as shop count grows. Hourly dumps are the
+one-cron-line version that removes most of the exposure today.
 
 Restore drill (do it once now, not during an outage):
 
 ```bash
 cd /srv/platform && ./restore.sh liquorpos backups/liquorpos-<stamp>.sql.gz
 ```
+
+The monthly `verify-restore.sh` line above proves the newest **daily** dump still restores
+into a scratch database. An untested backup is a hypothesis.
 
 ## 8. Monitoring
 

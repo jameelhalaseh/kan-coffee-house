@@ -33,8 +33,10 @@ jobs:
       # globalSetup creates and migrates liquorpos_test on this server per run.
       TEST_DATABASE_URL: postgres://pos:pos@localhost:5433/liquorpos_test
       DATABASE_SSL: 'false'
-      # Must match src/client.config.js store.timezone, or the trading-day tests
-      # (the UTC+3 midnight boundary) assert against a different clock than the code uses.
+      # The shop's trading-day clock. The browser is told this value at runtime
+      # (server/clientConfig.js), so it is the single source rather than something that has
+      # to be kept level with a literal in the bundle — but the trading-day tests still
+      # assert against the UTC+3 midnight boundary, so it must be set here.
       STORE_TZ: Asia/Amman
       CI: 'true'
 
@@ -73,3 +75,64 @@ jobs:
             exit 1
           fi
           echo "No secrets found."
+
+  # ── Publish the one image every client runs ─────────────────────────────────
+  # The bundle stopped being client-specific when shop identity moved to runtime config
+  # (server/clientConfig.js), so there is exactly ONE image and it is built here, once,
+  # instead of on the VPS once per shop.
+  #
+  # `needs: test` is the point of doing it in CI at all: an image that reaches a shop's till
+  # has passed the suite by construction, rather than because whoever ran the build
+  # remembered to run the tests first.
+  publish:
+    needs: test
+    # Only from main, and never from a pull request — a fork's PR must not be able to
+    # publish an image that clients pull.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write        # the only write scope needed; GITHUB_TOKEN is scoped per-run
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Tags: the commit sha is the one clients PIN. `main` is a moving pointer for staging
+      # and for "what is newest", and deliberately not called `latest` — a client stack that
+      # accidentally pins a moving tag would silently change build on any restart, which is
+      # exactly the failure the pinned tag in deploy/docker-compose.yml exists to prevent.
+      - name: Metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=sha,format=long,prefix=
+            type=raw,value=main
+            type=semver,pattern=v{{version}}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # Layer cache in the registry, so a change to server/ does not re-run `npm ci`
+          # and the whole React build from scratch.
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Show what to pin
+        run: |
+          echo "Pin this in a client's deploy/.env:"
+          echo "  POS_IMAGE=ghcr.io/${{ github.repository }}:${{ github.sha }}"
