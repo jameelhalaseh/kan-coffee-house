@@ -69,6 +69,13 @@ describe('queueing a sale', () => {
     enqueue(sale('b'));
     expect(JSON.parse(localStorage.getItem(PENDING_KEY)).map((s) => s.id)).toEqual(['a', 'b']);
   });
+
+  test('a sale queued because of a 5xx does not claim the connection is down', () => {
+    // The server answered — it is its database that is gone. Showing a red disconnected
+    // badge here would be a different lie from the one the badge was built to stop.
+    enqueue(sale('a'), { reachable: true });
+    expect(deriveStatus(getState())).toBe(PENDING);
+  });
 });
 
 describe('flushing', () => {

@@ -85,10 +85,15 @@ export function reportNetworkResult(answered) {
   }
 }
 
-export function enqueue(sale) {
+// `reachable` is what the caller learned from the failure that made it queue: false when
+// nothing answered, true when the server answered and the answer was a 5xx. Defaulted to
+// false because an unreachable server is the older and commoner reason to be here, but it
+// must be passed for a 5xx — otherwise the badge goes red claiming a disconnection while
+// the server is plainly answering, and the whole point of the badge is that it does not lie.
+export function enqueue(sale, { reachable = false } = {}) {
   const list = [...readPending(), sale];
   writePending(list);
-  set({ pending: list.length, reachable: false });
+  set({ pending: list.length, reachable });
   scheduleRetry();
 }
 

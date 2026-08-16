@@ -111,3 +111,18 @@ export const returnedMapFor = (sale, orders) => {
     }));
   return map;
 };
+
+// Is a failed request the server's fault rather than this request's?
+//
+// Two shapes of outage look completely different to fetch and have to be treated the same:
+//   - no response at all (.status undefined) — the server is unreachable
+//   - a 5xx — the server is running but something behind it, in practice its database, is not
+//
+// The second used to count as a rejection, because the only test was "did anything answer".
+// So a Postgres restart during trading — a normal Tuesday — gave the cashier "Checkout
+// failed" and threw the sale away, which is the exact case the offline queue exists for.
+//
+// A 4xx is deliberately excluded: that is the server rejecting THIS request on its merits
+// (401 session gone, 409 invoice clash, 400 bad payload), and retrying it unchanged would
+// only fail the same way while blocking everything queued behind it.
+export const isServerFault = (ex) => !!ex && (ex.status === undefined || ex.status >= 500);

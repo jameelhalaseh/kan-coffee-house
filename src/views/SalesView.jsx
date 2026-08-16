@@ -4,6 +4,7 @@ import { C, S } from '../theme';
 import { ARABIC, STORE_NAME, DEFAULT_FLOOR, TAX_RATE, PAYMENTS } from '../client.config';
 import {
   money, amount, r3, splitInclusiveTax, uid, nowParts, cashSuggestions, catColor,
+  isServerFault,
 } from '../lib';
 import { HELD_KEY, PAD_KEY, BC_NAME, DISPLAY_KEY } from '../constants';
 import { enqueue, flush as flushPending } from '../sync';
@@ -16,9 +17,6 @@ import { Overlay, NumPad, qtyBtn } from '../components/ui';
 import { categoryCards, inCat, CategoryGrid, CategoryHeader, catTitle } from '../components/categories';
 import ProductModal from '../components/ProductModal';
 
-
-// Network failure = fetch rejected before a response (our api errors always carry .status).
-const isNetworkError = (ex) => ex && ex.status === undefined;
 
 // ── Category browsing (shared by Sales and Inventory) ─────────────────────────
 // Both screens use the same two-step model: pick a shelf, then work inside it.
@@ -70,8 +68,9 @@ function SalesView({ user, notify }) {
   // the shell loaded and the queue was ready, but the screen said "No products", and a till
   // that cannot show a bottle cannot ring one.
   //
-  // Only network failures fall back. A 401 means the session is gone and the right answer is
-  // the login screen, not a catalogue; serving products there would hide the real problem.
+  // Only the server's own failures fall back — unreachable, or a 5xx with its database down.
+  // A 401 means the session is gone and the right answer is the login screen, not a
+  // catalogue; serving products there would hide the real problem.
   const [stale, setStale] = useState(null);   // { at } when showing a cached copy
   const loadProducts = useCallback(async () => {
     try {
@@ -80,7 +79,7 @@ function SalesView({ user, notify }) {
       setStale(null);
       saveCatalog(rows);
     } catch (ex) {
-      if (ex && typeof ex.status === 'number') return;   // the server answered; not an outage
+      if (!isServerFault(ex)) return;   // a 4xx is about this request, not an outage
       const cached = readCatalog();
       if (!cached) return;                                // nothing to fall back to
       setProducts(cached.products);
@@ -246,11 +245,17 @@ function SalesView({ user, notify }) {
       loadProducts();
       notify(ARABIC ? `تمت الفاتورة #${invoice_no}` : `Sale #${invoice_no} done`, 'green');
     } catch (ex) {
-      if (isNetworkError(ex)) {
-        // No server — keep the sale locally, print an OFFLINE receipt, move on.
-        enqueue(sale);
+      if (isServerFault(ex)) {
+        // Not this sale's fault — keep it locally, print an OFFLINE receipt, move on. The
+        // queue replays it with the same sale id, and the server's insert is idempotent on
+        // that id (stock moves only for a genuinely new row), so a sale that turns out to
+        // have committed before the error is not counted or deducted twice.
+        enqueue(sale, { reachable: ex.status !== undefined });
         finish({ ...sale, invoice_no: ARABIC ? 'غير متصل' : 'OFFLINE' });
-        notify(ARABIC ? 'لا اتصال — حُفظت الفاتورة محلياً وستُزامن تلقائياً' : 'Offline — sale saved locally, will sync automatically', 'green');
+        // Worded for what the cashier must do (nothing) rather than for the cause, which
+        // differs between an unreachable server and a broken one but changes nothing at
+        // the counter.
+        notify(ARABIC ? 'تعذّر الاتصال بالخادم — حُفظت الفاتورة محلياً وستُزامن تلقائياً' : 'Server unavailable — sale saved locally, will sync automatically', 'green');
       } else {
         notify(ex.message === 'invoice_taken' ? (ARABIC ? 'تعارض رقم الفاتورة، أعد المحاولة' : 'Invoice clash — retry') : (ARABIC ? 'فشل الدفع' : 'Checkout failed'), 'red');
       }

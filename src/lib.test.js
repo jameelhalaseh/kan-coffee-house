@@ -1,6 +1,6 @@
 import {
   money, cashSuggestions, catColor, escapeHtml, remainingQty, returnedMapFor,
-  nowParts, todayInStore, splitInclusiveTax, storeTimeOf, storeDateOf,
+  nowParts, todayInStore, splitInclusiveTax, storeTimeOf, storeDateOf, isServerFault,
 } from './lib';
 
 // Checkout used to send `tax: 0, sub: total` and never import TAX_RATE, so a shop
@@ -169,5 +169,44 @@ describe('returns clamping', () => {
     const other = { ...refund, buyer: 'return of #8' };
     const map = returnedMapFor(sale, [sale, other]);
     expect(remainingQty(sale.items[0], map)).toBe(3);
+  });
+});
+
+// The predicate that decides whether a failed checkout is queued or thrown away. It got this
+// wrong for every 5xx, which is the single likeliest outage a shop will actually meet: the
+// server up, its database restarting.
+describe('isServerFault', () => {
+  test.each([
+    ['nothing answered at all', {}],
+    ['a 500', { status: 500 }],
+    ['a 502 from the reverse proxy', { status: 502 }],
+    ['a 503 while the database is starting', { status: 503 }],
+    ['a 504 gateway timeout', { status: 504 }],
+  ])('%s is the server side failing, so the sale is kept', (_label, ex) => {
+    expect(isServerFault(ex)).toBe(true);
+  });
+
+  test.each([
+    ['a 400 bad payload', { status: 400 }],
+    ['a 401 expired session', { status: 401 }],
+    ['a 403', { status: 403 }],
+    ['a 404', { status: 404 }],
+    ['a 409 invoice clash', { status: 409 }],
+    ['a 429 rate limit', { status: 429 }],
+  ])('%s is about the request, so it is not queued', (_label, ex) => {
+    expect(isServerFault(ex)).toBe(false);
+  });
+
+  test('no error object at all is not treated as an outage', () => {
+    // Queueing on a null would let any unrelated bug in the checkout path silently bank a
+    // sale the server never heard of.
+    expect(isServerFault(null)).toBe(false);
+    expect(isServerFault(undefined)).toBe(false);
+  });
+
+  test('a 409 stays excluded — it has its own retry path', () => {
+    // invoice_taken is handled by re-fetching a number and sending again immediately.
+    // Queueing it instead would park a sale that could have gone through on the spot.
+    expect(isServerFault({ status: 409, message: 'invoice_taken' })).toBe(false);
   });
 });
