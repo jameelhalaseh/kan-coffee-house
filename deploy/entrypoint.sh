@@ -18,5 +18,13 @@ done
 echo "[entrypoint] applying migrations…"
 node server/migrate.js
 
+# The reporting module keeps its own migration ledger and its own directory
+# (reporting/migrations), so `npm run migrate:reporting` is a SECOND migration path that
+# server/migrate.js does not cover. Left out, the container boots clean and then every
+# Financials request 500s on a missing table — a failure that shows up days later, from the
+# shop, rather than here on deploy where it belongs.
+echo "[entrypoint] applying reporting migrations…"
+node reporting/migrate.js
+
 echo "[entrypoint] starting: $*"
 exec "$@"

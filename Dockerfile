@@ -32,6 +32,12 @@ COPY deploy/package.runtime.json ./package.json
 RUN npm install --omit=dev --no-audit --no-fund && npm cache clean --force
 
 COPY server ./server
+# server/routes/index.js requires ../../reporting/api at startup, so this is not optional —
+# without it the container crash-loops on `Cannot find module '../../reporting/api'` before
+# it ever listens. It carries its own migrations too (reporting/migrations/*.sql, applied by
+# the entrypoint), and it needs no dependency that package.runtime.json does not already
+# list: express, pg, dotenv and Node builtins.
+COPY reporting ./reporting
 COPY --from=build /app/build ./build
 COPY deploy/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
