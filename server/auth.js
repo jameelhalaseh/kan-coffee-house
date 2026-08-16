@@ -3,7 +3,7 @@
 // Faithful port of the Supabase RPCs (AUTH_SETUP.sql / SECURITY_HARDENING.sql):
 //   * Session = an opaque random token stored in app_users.session_token (NOT a JWT).
 //   * Single active session per user (a new login overwrites the prior token).
-//   * Hard TTL from login (default 12h); validate does NOT slide/renew the expiry.
+//   * IDLE expiry (default 30 days), renewed by use — see SESSION_IDLE_HOURS below.
 //   * Passwords are bcrypt; bcryptjs verifies pgcrypto's $2a$ hashes unchanged.
 //   * allowed_views is CLIENT-SIDE UI gating only — data routes require a valid
 //     session (any role); only admin routes require role='admin'.
@@ -17,8 +17,41 @@ function maskEmail(email) {
   return String(email || '').replace(/^(.{2}).*(@.*)$/, '$1***$2');
 }
 
-const _ttl = parseInt(process.env.SESSION_TTL_HOURS, 10);
-const TTL_HOURS = Number.isFinite(_ttl) && _ttl > 0 ? _ttl : 12; // reject 0/NaN/negative → would mint already-expired tokens
+// ── Session lifetime: IDLE, not fixed ────────────────────────────────────────
+// This used to be a hard 12h from login, which expired mid-shift by design — a cashier who
+// signed in at 09:00 was thrown out at 21:00, in the middle of the busiest hours, with a
+// customer at the counter. Worse, it did so on the schedule of when they happened to log in
+// rather than anything about the shop.
+//
+// It is now an IDLE window: every authenticated request pushes the expiry out, so a till in
+// daily use never logs out at all. What still expires is a session nobody is using — a
+// tablet left in a drawer, or one that walked out of the shop. That is the property worth
+// keeping, and the only one the old timer actually bought.
+//
+// The renewal is throttled to at most one write per half-window (see touchSession), so this
+// costs an UPDATE roughly every fifteen days per till rather than one per request.
+const _idle = parseInt(process.env.SESSION_IDLE_HOURS, 10);
+const _legacy = parseInt(process.env.SESSION_TTL_HOURS, 10);   // pre-sliding name
+const IDLE_HOURS = Number.isFinite(_idle) && _idle > 0 ? _idle
+  : Number.isFinite(_legacy) && _legacy > 0 ? _legacy
+  : 24 * 30;                                  // 30 days
+// 0/NaN/negative are rejected above rather than honoured: they would mint tokens that are
+// already expired, locking every user out of a shop with one typo in an .env.
+
+// SESSION_TTL_HOURS still works, but it no longer means what its name says — a deployment
+// carrying `SESSION_TTL_HOURS=12` from the old model would silently get a 12-hour IDLE
+// window, which is not what anyone reading that line would expect. Say so once at boot.
+if (!Number.isFinite(_idle) && Number.isFinite(_legacy) && _legacy > 0) {
+  console.warn(JSON.stringify({
+    level: 'warn',
+    msg: 'SESSION_TTL_HOURS is deprecated and now means IDLE hours, not a fixed lifetime — '
+       + 'sessions renew on use. Rename it to SESSION_IDLE_HOURS.',
+    idle_hours: IDLE_HOURS,
+  }));
+}
+
+// Kept as the old export name so nothing downstream breaks; it is the idle window now.
+const TTL_HOURS = IDLE_HOURS;
 
 const newToken = () => crypto.randomBytes(24).toString('hex'); // 48 hex chars (mirrors encode(gen_random_bytes(24),'hex'))
 
@@ -117,14 +150,38 @@ async function loginUser(username, password) {
   return userJson(u, token);
 }
 
-// ── app_validate (no expiry renewal) ─────────────────────────────────────────
+// Push a live session's expiry back out to a full idle window.
+//
+// Throttled: only when less than HALF the window is left. Renewing on every request would
+// mean a database write per API call — a sale is ~5 calls, and thirty shops share one
+// Postgres — to move a deadline that is thirty days away. Half-window renewal keeps the
+// guarantee identical (a session in use never lapses) at roughly one write per fortnight.
+//
+// Never throws: a failure here must not turn a good request into a 500. The worst case of a
+// missed renewal is that the session expires on time, which is the old behaviour.
+async function touchSession(tokenHash, expiresAt) {
+  try {
+    const halfway = Date.now() + (IDLE_HOURS * 3600 * 1000) / 2;
+    if (expiresAt && new Date(expiresAt).getTime() > halfway) return;
+    await db.query(
+      'update app_users set token_exp = now() + make_interval(hours => $1) where session_token = $2',
+      [IDLE_HOURS, tokenHash]
+    );
+  } catch (_) { /* renewal is best-effort; the session remains valid until it lapses */ }
+}
+
+// ── app_validate (renews the idle window) ────────────────────────────────────
 async function validateToken(token) {
   if (!token) return null;
+  const hash = hashSecret(token);
   const { rows } = await db.query(
     'select * from app_users where session_token = $1 and token_exp > now() and active',
-    [hashSecret(token)]
+    [hash]
   );
   const u = rows[0];
+  // Opening the app is use. Without this, a till that is only ever reloaded — rather than
+  // making API calls — would still lapse.
+  if (u) await touchSession(hash, u.token_exp);
   // Echo back the token the CALLER sent, not the column: the column is now a hash, and
   // returning it would hand the client a credential that does not work.
   return u ? userJson(u, token) : null;
@@ -245,13 +302,18 @@ async function requireSession(req, res, next) {
   try {
     const token = getToken(req);
     if (!token) return res.status(401).json({ error: 'session' });
+    const hash = hashSecret(token);
     const { rows } = await db.query(
-      'select id, username, email, role, allowed_views from app_users where session_token = $1 and token_exp > now() and active',
-      [hashSecret(token)]
+      'select id, username, email, role, allowed_views, token_exp from app_users where session_token = $1 and token_exp > now() and active',
+      [hash]
     );
     if (!rows[0]) return res.status(401).json({ error: 'session' });
-    req.user = rows[0];   // NOTE: token_exp is deliberately NOT extended (no sliding TTL)
+    req.user = rows[0];
     req.token = token;
+    // Using the till is what keeps the session alive. Awaited rather than fired and
+    // forgotten: an unawaited rejection here would surface as an unhandled rejection and
+    // page whoever is on call, and the write is throttled to roughly one per fortnight.
+    await touchSession(hash, rows[0].token_exp);
     next();
   } catch (e) {
     next(e);

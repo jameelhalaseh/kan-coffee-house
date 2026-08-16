@@ -152,13 +152,69 @@ describe('session expiry', () => {
     expect(res.body).toEqual({ error: 'session' });
   });
 
-  test('using a session does NOT extend its expiry', async () => {
-    // No sliding TTL: a till left logged in overnight still expires on schedule.
+  // The expiry is an IDLE window now, not a fixed lifetime. The old model logged a cashier
+  // out twelve hours after they signed in — mid-shift, at the counter, on the schedule of
+  // when they happened to log in. What is still worth expiring is a session nobody is
+  // using: a tablet in a drawer, or one that left the shop.
+  const expOf = async (token) => (await db.query(
+    'select token_exp from app_users where session_token = $1', [stored(token)],
+  )).rows[0].token_exp;
+
+  test('a session close to lapsing is renewed by using it', async () => {
     const token = await login('admin');
-    const before = (await db.query('select token_exp from app_users where session_token = $1', [stored(token)])).rows[0].token_exp;
+    // Wind it down to nearly nothing: inside the half-window, so a renewal is due.
+    await db.query(
+      "update app_users set token_exp = now() + interval '1 minute' where session_token = $1",
+      [stored(token)],
+    );
+    const before = await expOf(token);
+    expect((await request(app).get('/api/products').set(...auth(token))).status).toBe(200);
+    const after = await expOf(token);
+    expect(new Date(after).getTime()).toBeGreaterThan(new Date(before).getTime());
+    // Pushed back out to a FULL window, not merely nudged. Measured against the configured
+    // window (setupEnv sets 12h) rather than the 30-day default, so the assertion still
+    // means "a full window" wherever this runs.
+    const windowMs = require('../auth').TTL_HOURS * 3600 * 1000;
+    expect(new Date(after).getTime() - Date.now()).toBeGreaterThan(windowMs * 0.9);
+  });
+
+  test('a session with most of its window left is NOT rewritten on every request', async () => {
+    // The throttle. Without it this is a database write per API call, and a sale is about
+    // five of them, across every till of every shop sharing one Postgres.
+    const token = await login('admin');
+    const before = await expOf(token);
     await request(app).get('/api/products').set(...auth(token));
-    const after = (await db.query('select token_exp from app_users where session_token = $1', [stored(token)])).rows[0].token_exp;
-    expect(after).toEqual(before);
+    await request(app).get('/api/products').set(...auth(token));
+    expect(await expOf(token)).toEqual(before);
+  });
+
+  test('validating at boot also renews — opening the till is use', async () => {
+    const token = await login('admin');
+    await db.query(
+      "update app_users set token_exp = now() + interval '1 minute' where session_token = $1",
+      [stored(token)],
+    );
+    const before = await expOf(token);
+    expect((await request(app).get('/api/auth/validate').set(...auth(token))).status).toBe(200);
+    expect(new Date(await expOf(token)).getTime()).toBeGreaterThan(new Date(before).getTime());
+  });
+
+  test('an already-expired session is not resurrected by using it', async () => {
+    // Renewal applies to LIVE sessions only. A lapsed token must stay dead, or the idle
+    // window would mean nothing.
+    const token = await login('admin');
+    await db.query(
+      "update app_users set token_exp = now() - interval '1 minute' where session_token = $1",
+      [stored(token)],
+    );
+    expect((await request(app).get('/api/products').set(...auth(token))).status).toBe(401);
+    expect(new Date(await expOf(token)).getTime()).toBeLessThan(Date.now());
+  });
+
+  test('logout still ends it immediately, regardless of the window', async () => {
+    const token = await login('admin');
+    await request(app).post('/api/auth/logout').set(...auth(token)).send({});
+    expect((await request(app).get('/api/products').set(...auth(token))).status).toBe(401);
   });
 });
 

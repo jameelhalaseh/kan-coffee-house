@@ -11,7 +11,8 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import api from './api';
 import { ARABIC, VIEWS } from './client.config';
 import { C } from './theme';
-import { TOKEN_KEY } from './constants';
+import { TOKEN_KEY, USER_KEY } from './constants';
+import { sessionAction, readCachedUser, SESSION_OFFLINE, SESSION_LOGOUT } from './session';
 
 import Sidebar from './components/Sidebar';
 import CustomerDisplay from './components/CustomerDisplay';
@@ -62,23 +63,72 @@ export default function App() {
   }, []);
 
   // Restore session on load from the persisted token.
+  //
+  // THE DISTINCTION THAT MATTERS: "the server says this session is dead" and "I cannot reach
+  // the server" are not the same thing, and this used to treat them identically — any failure
+  // cleared the token. So the moment the shop's internet dropped, a reload logged the cashier
+  // out and dumped them on a login screen that could not reach the server either. The till
+  // was dead for the whole outage, and the offline sales queue it carries never got a chance
+  // to be used, because you have to be signed in to reach the sales screen at all.
+  //
+  // src/api.js sets err.status on any response the server actually sent; a fetch that never
+  // completed throws without one. That is the discriminator:
+  //   status present  → the server answered and rejected us. Really log out.
+  //   status absent   → nobody answered. Keep the session and carry on offline.
   useEffect(() => {
     const t = localStorage.getItem(TOKEN_KEY);
     if (!t) { setBooting(false); return; }
     api.setToken(t);
     let alive = true;
     api.get('/auth/validate')
-      .then((u) => { if (alive) setUser(u); })
-      .catch(() => { api.setToken(null); localStorage.removeItem(TOKEN_KEY); })
+      .then((u) => {
+        if (!alive) return;
+        setUser(u);
+        // Cached so the branch below has an identity to restore. Written only after the
+        // server has confirmed it, and never read while the server is reachable.
+        try { localStorage.setItem(USER_KEY, JSON.stringify(u)); } catch (_) {}
+      })
+      .catch((e) => {
+        if (!alive) return;
+        const cached = readCachedUser(localStorage.getItem(USER_KEY));
+        const action = sessionAction(e, cached);
+
+        if (action === SESSION_OFFLINE) {
+          // Reopen the last confirmed session and let the till work.
+          //
+          // This grants nothing: the token is still the only credential, the API re-authorises
+          // every request, and if the session HAS expired the first call that reaches the
+          // server 401s and the normal expiry path signs them out. The worst case is a cashier
+          // seeing their own shop's screens during an outage — while every sale they ring is
+          // held in the offline queue, which is exactly what it is for.
+          setUser(cached);
+          notify(
+            ARABIC ? 'لا يوجد اتصال — الوضع دون اتصال' : 'No connection — working offline',
+            'info',
+          );
+          return;
+        }
+
+        if (action === SESSION_LOGOUT) {
+          api.setToken(null);
+          localStorage.removeItem(TOKEN_KEY);
+          localStorage.removeItem(USER_KEY);
+        }
+        // SESSION_LOGIN: nothing to restore — fall through to the login screen.
+      })
       .finally(() => { if (alive) setBooting(false); });
     return () => { alive = false; };
-  }, []);
+  }, [notify]);
 
   // Blocking overlay when the session dies mid-use.
   useEffect(() => {
     api.setOnSessionExpired(() => {
       api.setToken(null);
       localStorage.removeItem(TOKEN_KEY);
+      // The cached identity goes with it. Left behind, the next reload would reopen the
+      // session this handler just closed — including the case where the token expired while
+      // the till was offline and the server rejected it the moment it came back.
+      localStorage.removeItem(USER_KEY);
       setUser(null);
       notify(ARABIC ? 'انتهت الجلسة، سجّل الدخول من جديد' : 'Session expired — please log in again', 'red');
     });
@@ -87,6 +137,7 @@ export default function App() {
   const handleLogin = (u) => {
     api.setToken(u.token);
     localStorage.setItem(TOKEN_KEY, u.token);
+    try { localStorage.setItem(USER_KEY, JSON.stringify(u)); } catch (_) {}
     setUser(u);
     setView('sales');
   };
@@ -94,6 +145,9 @@ export default function App() {
     try { await api.post('/auth/logout'); } catch (_) {}
     api.setToken(null);
     localStorage.removeItem(TOKEN_KEY);
+    // Deliberate sign-out clears the cache too, so the next reload cannot reopen it — a
+    // cashier handing the till to the next shift must actually be signed out, offline or not.
+    localStorage.removeItem(USER_KEY);
     setUser(null);
   };
 
