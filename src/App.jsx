@@ -7,7 +7,7 @@
 // This file is the SHELL only: session bootstrap, the offline banner, view routing and the
 // toast. Each screen lives in src/views/ and shared pieces in src/components/ — it was one
 // 2,600-line file, which meant every change to any screen touched the same module.
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import api from './api';
 import { ARABIC, VIEWS } from './client.config';
 import { C } from './theme';
@@ -17,6 +17,7 @@ import Sidebar from './components/Sidebar';
 import CustomerDisplay from './components/CustomerDisplay';
 import ChangePasswordModal from './components/ChangePasswordModal';
 import { Centered } from './components/ui';
+import Toasts, { TOAST_MS, toastCap } from './components/Toasts';
 
 import Login from './views/Login';
 import SalesView from './views/SalesView';
@@ -33,7 +34,8 @@ export default function App() {
   const [user, setUser] = useState(null);
   const [booting, setBooting] = useState(true);
   const [view, setView] = useState('sales');
-  const [toast, setToast] = useState(null);
+  const [toasts, setToasts] = useState([]);
+  const toastSeq = useRef(0);            // ids, so two identical messages are still two toasts
   const [online, setOnline] = useState(typeof navigator === 'undefined' ? true : navigator.onLine);
   const [pwOpen, setPwOpen] = useState(false);   // change-password popup
 
@@ -45,9 +47,18 @@ export default function App() {
     return () => { window.removeEventListener('online', up); window.removeEventListener('offline', down); };
   }, []);
 
+  // Messages STACK. Every call adds one; nothing replaces anything. A failure and a success
+  // that land together are both readable, which is the whole point — the previous single-slot
+  // toast silently dropped whichever arrived first.
+  const dismiss = useCallback((id) => {
+    setToasts((list) => list.filter((t) => t.id !== id));
+  }, []);
+
   const notify = useCallback((msg, kind = 'info') => {
-    setToast({ msg, kind });
-    setTimeout(() => setToast(null), 2600);
+    const id = ++toastSeq.current;
+    const ms = TOAST_MS[kind] || TOAST_MS.info;
+    setToasts((list) => toastCap([...list, { id, msg, kind, ms }]));
+    setTimeout(() => setToasts((list) => list.filter((t) => t.id !== id)), ms);
   }, []);
 
   // Restore session on load from the persisted token.
@@ -88,7 +99,17 @@ export default function App() {
 
   if (isDisplay) return <CustomerDisplay />;
   if (booting) return <Centered>{ARABIC ? 'جارٍ التحميل…' : 'Loading…'}</Centered>;
-  if (!user) return <Login onLogin={handleLogin} />;
+  // The login screen gets the stack too: "session expired" is raised at the moment the user is
+  // sent back here, and with the toasts living only in the signed-in branch it was raised into
+  // a component that had already unmounted — the message was never seen.
+  if (!user) {
+    return (
+      <>
+        <Login onLogin={handleLogin} />
+        <Toasts items={toasts} onDismiss={dismiss} />
+      </>
+    );
+  }
 
   const isAdmin = user.role === 'admin';
   const allowed = (v) => {
@@ -132,11 +153,7 @@ export default function App() {
         </div>
       </main>
       {pwOpen && <ChangePasswordModal notify={notify} onClose={() => setPwOpen(false)} />}
-      {toast && (
-        <div className="toast-pop" style={{ position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)', background: toast.kind === 'red' ? C.red : toast.kind === 'green' ? C.green : C.panel2, color: toast.kind === 'info' ? C.text : C.accentText, padding: '13px 24px', borderRadius: 12, fontWeight: 700, fontSize: 15, boxShadow: C.shadow, zIndex: 1000 }}>
-          {toast.msg}
-        </div>
-      )}
+      <Toasts items={toasts} onDismiss={dismiss} />
     </div>
   );
 }

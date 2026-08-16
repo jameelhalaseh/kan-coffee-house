@@ -33,24 +33,24 @@
       ::-webkit-scrollbar-thumb:hover{background:var(--scroll-thumb-hover);}
       /* Entry animations */
       @keyframes rise{from{opacity:0;transform:translateY(10px);}to{opacity:1;transform:translateY(0);}}
-      @keyframes pop{0%{transform:translateX(-50%) translateY(16px);opacity:0;}100%{transform:translateX(-50%) translateY(0);opacity:1;}}
       .rise{animation:rise .25s ease both;}
-      .toast-pop{animation:pop .22s cubic-bezier(.16,1,.3,1) both;}
+      /* Notifications: slide in from the edge they live on, and drain a timer bar for exactly
+         as long as the toast is on screen (duration comes from the component). */
+      @keyframes toast-in{from{opacity:0;transform:translateX(24px) scale(.97);}to{opacity:1;transform:none;}}
+      @keyframes toast-drain{from{width:100%;}to{width:0;}}
+      .toast-in{animation:toast-in .26s cubic-bezier(.16,1,.3,1) both;}
+      [dir="rtl"] .toast-in{animation-name:toast-in-rtl;}
+      @keyframes toast-in-rtl{from{opacity:0;transform:translateX(-24px) scale(.97);}to{opacity:1;transform:none;}}
+      /* Motion is decoration here; the message is the content. Honour the OS setting. */
+      @media (prefers-reduced-motion:reduce){
+        .toast-in{animation:none;}
+        .rise{animation:none;}
+      }
       input:focus{border-color:var(--accent) !important;box-shadow:0 0 0 2px rgba(240,168,48,.2);}
       /* The night theme lightens a button on hover; on a white panel that washes it out, so
          day darkens instead. */
       @media (hover:hover){ :root[data-theme="day"] button:hover{filter:brightness(.94);} }
     </style>
-      <link rel="manifest" href="%PUBLIC_URL%/manifest.json"/>
-    <link rel="icon" href="%PUBLIC_URL%/icons/icon-192.png"/>
-    <link rel="apple-touch-icon" href="%PUBLIC_URL%/icons/icon-512.png"/>
-    <meta name="mobile-web-app-capable" content="yes"/>
-    <meta name="apple-mobile-web-app-capable" content="yes"/>
-    <meta name="apple-mobile-web-app-title" content="Liquor Store"/>
-</head>
-  <body>
-    <div id="root"></div>
-  </body>
     <!-- This shop's identity — name, VAT rate, receipt header, timezone — served by the API
          at runtime (server/clientConfig.js) so ONE build serves every client. It sets
          window.__CLIENT__, which src/client.config.js merges over its baked-in defaults.
@@ -65,4 +65,14 @@
          deep link. If it 404s (a static demo build with no API), the app falls back to the
          defaults in src/client.config.js and boots fine. -->
     <script src="/client-config.js"></script>
+      <link rel="manifest" href="%PUBLIC_URL%/manifest.json"/>
+    <link rel="icon" href="%PUBLIC_URL%/icons/icon-192.png"/>
+    <link rel="apple-touch-icon" href="%PUBLIC_URL%/icons/icon-512.png"/>
+    <meta name="mobile-web-app-capable" content="yes"/>
+    <meta name="apple-mobile-web-app-capable" content="yes"/>
+    <meta name="apple-mobile-web-app-title" content="Liquor Store"/>
+</head>
+  <body>
+    <div id="root"></div>
+  </body>
 </html>
