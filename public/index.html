@@ -51,4 +51,18 @@
   <body>
     <div id="root"></div>
   </body>
+    <!-- This shop's identity — name, VAT rate, receipt header, timezone — served by the API
+         at runtime (server/clientConfig.js) so ONE build serves every client. It sets
+         window.__CLIENT__, which src/client.config.js merges over its baked-in defaults.
+
+         Deliberately a plain blocking <script src>, not defer/async and not inline:
+           · inline would be blocked — script-src is 'self' with no 'unsafe-inline', which
+             is what stops an XSS reading the session token out of localStorage;
+           · blocking-in-head runs BEFORE CRA's deferred bundle, so the config is present
+             the moment client.config.js evaluates. defer here would be a race the app
+             loses roughly never, which is the worst frequency for a bug.
+         Absolute path, so it still resolves when the SPA catch-all serves this shell for a
+         deep link. If it 404s (a static demo build with no API), the app falls back to the
+         defaults in src/client.config.js and boots fine. -->
+    <script src="/client-config.js"></script>
 </html>

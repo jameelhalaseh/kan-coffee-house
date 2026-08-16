@@ -118,6 +118,38 @@ app.use('/api', limiter(5 * 60 * 1000, envMax('API_RATE_LIMIT_MAX', 1200)));
 app.get('/healthz', (_req, res) => res.json({ status: 'ok' }));
 app.use('/api', require('./routes'));
 
+// ── Per-client identity, handed to the browser at RUNTIME ─────────────────────
+// This is what lets ONE image serve every shop: the bundle ships with defaults and this
+// response overrides them, so a client is an .env file rather than its own React build.
+//
+// A file, not an inline <script>, because script-src is 'self' with no 'unsafe-inline'
+// (see the CSP above) — an inline block would be blocked, and loosening the policy to allow
+// it would hand any XSS the cashier's session token. A same-origin script SRC is allowed
+// under exactly the policy already in force, so this costs nothing.
+//
+// It must load BEFORE the bundle. public/index.html requests it with a plain <script> in
+// <head>; CRA's own bundle tag is `defer`, and a blocking script in head always runs before
+// a deferred one, so window.__CLIENT__ is set by the time any module body evaluates.
+//
+// Registered ahead of express.static so it wins over any stale build/client-config.js, and
+// ahead of the SPA catch-all so a request for it never comes back as index.html.
+const { clientConfigScript, manifest } = require('./clientConfig');
+
+app.get('/client-config.js', (_req, res) => {
+  // no-store for the same reason index.html is no-store: an operator who fixes a shop's
+  // name or VAT rate and restarts must not be overruled by a cached copy on the till. It is
+  // a few hundred bytes on app launch, not per request.
+  res.set('Cache-Control', 'no-store, must-revalidate');
+  res.type('application/javascript').send(clientConfigScript());
+});
+
+// Same reasoning for the PWA manifest: the installed app's name on a cashier's home screen
+// comes from here, and a static one would name every client's till "Liquor Store POS".
+app.get('/manifest.json', (_req, res) => {
+  res.set('Cache-Control', 'no-store, must-revalidate');
+  res.json(manifest());
+});
+
 // ── Static React build (optional — present after `npm run build` / heroku-postbuild)
 const buildDir = path.join(__dirname, '..', 'build');
 const buildIndex = path.join(buildDir, 'index.html');
