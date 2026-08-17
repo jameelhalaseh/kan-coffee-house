@@ -1,0 +1,313 @@
+================================================================================
+PRODUCT TILE ARTWORK — IMAGE GENERATION PROMPTS
+Kan Coffee House  ·  44 drinks  ·  5 batches of 10
+================================================================================
+
+Sibling of category-image-prompts.txt, for the other grain: one picture per
+PRODUCT rather than per category. Upload them at Inventory -> product ->
+Product picture (admin only).
+
+
+--------------------------------------------------------------------------------
+0. READ THIS BEFORE YOU START
+--------------------------------------------------------------------------------
+
+THREE THINGS RUIN A BATCH, AND ALL THREE ARE EASY TO WALK INTO.
+
+  1. A BACKGROUND. The app CANNOT remove one. The upload will warn you, and the
+     tile will show a rectangular block sitting on a colour gradient. You need a
+     real cut-out with an alpha channel.
+       - OpenAI: gpt-image-1 with background: "transparent". In the ChatGPT app,
+         ask for it in words: "transparent background PNG, no backdrop".
+       - DALL-E 3 CANNOT produce alpha at all. Asking it for "no background"
+         gets you a white rectangle that looks fine until you upload it.
+
+  2. A CONTACT SHEET. Asking for "10 images" in one message often returns ONE
+     image containing ten drinks in a grid. That is useless here — each product
+     needs its own file. Say it explicitly: one image per prompt, separately.
+
+  3. DRIFT BETWEEN BATCHES. These are seen ten-at-once in a grid, so one
+     different cup or one brighter light is immediately obvious. Do all five
+     batches in the SAME conversation so the model can see what it already made,
+     and paste the STYLE BLOCK verbatim at the top of every batch even so.
+
+
+--------------------------------------------------------------------------------
+1. SIZE AND FORMAT
+--------------------------------------------------------------------------------
+
+  Generate at:   1024 x 1024, square (1:1)
+  Ship at:       whatever you like — the app normalises it
+  Transparency:  REQUIRED. PNG with alpha.
+
+You do not need to resize or crop anything. src/imageNormalize.js trims to the
+subject's alpha bounding box, scales it to a consistent size and centres it on a
+512x512 transparent canvas, so a 4000px render and a 200px icon land on the shelf
+at the same visual weight. That trim is also why a generous even margin in the
+source costs nothing.
+
+
+--------------------------------------------------------------------------------
+2. THE STYLE BLOCK — paste this at the top of EVERY batch, unchanged
+--------------------------------------------------------------------------------
+
+You are producing a consistent SET of product cut-outs for a coffee shop's
+point-of-sale screen. Consistency across the whole set matters more than any
+single image: they are seen ten at a time in a grid, so one odd angle, one
+different cup or one brighter light is immediately obvious.
+
+Apply ALL of the following to every image:
+
+- Output a PNG with a FULLY TRANSPARENT background. No backdrop, no surface, no
+  table, no gradient, no white fill. A true cut-out.
+- One single vessel per image, centred, filling most of the frame with an even
+  margin around it.
+- Identical camera for every image: three-quarter view from about 20 degrees
+  above the rim. Do not vary the angle between drinks.
+- Soft, even studio lighting from the upper left. No harsh highlights, no
+  blown-out speculars.
+- NO drop shadow, NO reflection, NO contact shadow baked into the image. The
+  app adds its own shadow; a second one looks wrong.
+- NO text, NO logos, NO branding, NO labels, NO packaging, NO hands, NO saucers,
+  NO spoons, NO straws, NO napkins, NO background props. The vessel and the
+  drink only, plus any garnish named in the prompt.
+- Hot drinks: warm stone-grey ceramic. Cold drinks: plain clear glass.
+  Do NOT use pure white ceramic — the tile can sit on a light background and a
+  white cup loses its edges against it. Let the drink itself carry the colour.
+- Photorealistic and appetising. Not illustration, not cartoon, not 3D render.
+- Square 1:1.
+
+Generate these ONE AT A TIME — one image per numbered prompt. Do NOT combine
+them into a grid, contact sheet, collage or single composite image.
+
+
+--------------------------------------------------------------------------------
+3. FILENAMES AND WHY THEY CARRY THE SKU
+--------------------------------------------------------------------------------
+
+Save each file under the name given. The SKU prefix is not decoration:
+
+THREE DRINKS EXIST TWICE ON THIS MENU, HOT AND COLD, AT DIFFERENT PRICES, AND
+TWO OF THEM HAVE IDENTICAL NAMES.
+
+    Spanish Latte      KC-HC-10 (hot, 3.75)   KC-CC-06 (iced, 4.00)
+    Caramel Macchiato  KC-HC-11 (hot, 3.75)   KC-CC-07 (iced, 4.00)
+    Mocha              KC-HC-09 (hot, 3.75)   KC-CC-05 (iced, 4.00)
+
+Match uploads by SKU, never by name, or the hot one gets the iced picture and
+nobody notices until a customer does.
+
+
+================================================================================
+BATCH 1 of 5  —  Hot Coffee (1-10)
+================================================================================
+
+1. KC-HC-01-espresso.png
+   A small stone-grey ceramic demitasse of espresso, filled two-thirds, with a
+   thin even hazelnut crema layer on the surface.
+
+2. KC-HC-02-espresso-macchiato.png
+   The same small stone-grey demitasse of espresso, marked with one small round
+   dollop of white milk foam in the centre of the surface.
+
+3. KC-HC-03-lungo.png
+   A slightly taller stone-grey ceramic cup of lungo — a long black coffee filled
+   higher than an espresso, with a pale crema ring around the rim.
+
+4. KC-HC-04-americano.png
+   A medium stone-grey ceramic mug of americano: black coffee filled near the
+   top, a thin pale crema film on the surface, no milk.
+
+5. KC-HC-05-v60-chemex.png
+   A clear glass hourglass pour-over brewer with a plain wooden collar, half full
+   of amber filter coffee, a white paper cone seated in the neck.
+
+6. KC-HC-06-cappuccino.png
+   A stone-grey ceramic cup of cappuccino with a thick domed white milk foam and
+   a light even dusting of cocoa powder.
+
+7. KC-HC-07-cafe-latte.png
+   A taller stone-grey ceramic cup of latte with a glossy milk surface and a
+   simple white rosetta leaf in latte art.
+
+8. KC-HC-08-flat-white.png
+   A shallow wide stone-grey ceramic cup of flat white: a flat glossy microfoam
+   surface with one small round white dot of latte art, no foam dome.
+
+9. KC-HC-09-white-dark-mocha.png
+   A stone-grey ceramic mug of hot mocha: chocolate-brown coffee topped with a
+   swirl of white cream and a fine drizzle of dark chocolate.
+
+10. KC-HC-10-spanish-latte.png
+    A stone-grey ceramic cup of hot Spanish latte: pale caramel-toned milky
+    coffee with a glossy surface and no latte art.
+
+
+================================================================================
+BATCH 2 of 5  —  Hot Coffee (11-13) + Cold Coffee (1-7)
+================================================================================
+
+11. KC-HC-11-caramel-macchiato.png
+    A stone-grey ceramic cup of hot caramel macchiato: visible layers of steamed
+    milk and espresso, with a caramel drizzle lattice across the foam.
+
+12. KC-HC-12-cortado.png
+    A small clear glass tumbler of cortado, equal parts espresso and steamed
+    milk, showing two distinct horizontal layers.
+
+13. KC-HC-13-turkish.png
+    A small traditional Turkish coffee cup in warm stone ceramic with a thin gold
+    rim, holding thick dark coffee with a fine pale foam on top.
+
+14. KC-CC-01-iced-latte.png
+    A tall clear glass of iced latte: ice cubes, espresso poured over milk giving
+    a soft brown-to-cream gradient down the glass.
+
+15. KC-CC-02-cold-brew.png
+    A tall clear glass of cold brew: ice cubes and deep dark brown coffee, no
+    milk, with a slight foam collar at the top.
+
+16. KC-CC-03-cold-brew-bottle.png
+    A plain clear glass bottle with a simple black cap, filled with dark cold
+    brew coffee. Completely unlabelled — no text or logo anywhere.
+
+17. KC-CC-04-iced-americano.png
+    A tall clear glass of iced americano: ice cubes in clear black coffee with a
+    thin crema film on the surface.
+
+18. KC-CC-05-dark-white-mocha.png
+    A tall clear glass of iced mocha: ice, chocolate-brown iced coffee, a white
+    cream cap and a dark chocolate drizzle.
+
+19. KC-CC-06-spanish-latte-iced.png
+    A tall clear glass of iced Spanish latte: ice, pale caramel milky iced coffee
+    with a condensed-milk swirl settling at the bottom.
+
+20. KC-CC-07-caramel-macchiato-iced.png
+    A tall clear glass of iced caramel macchiato: ice, layered milk and espresso,
+    with caramel drizzle running down the inside of the glass.
+
+
+================================================================================
+BATCH 3 of 5  —  Cold Coffee (8) + Tea & Herbs (all 7) + Hot Kan (1-2)
+================================================================================
+
+21. KC-CC-08-frappuccino.png
+    A tall clear glass of frappuccino: thick pale blended iced coffee with a
+    whipped cream dome on top. No lid, no straw.
+
+22. KC-TH-01-black-green-tea.png
+    A clear glass teacup of tea, amber-green in colour, clean and still. No tea
+    bag, no floating leaves.
+
+23. KC-TH-02-persian-tea.png
+    A small clear tulip-shaped Persian tea glass of deep red-amber tea.
+
+24. KC-TH-03-beduin-tea.png
+    A small clear glass of very dark strong Bedouin tea with one sprig of fresh
+    sage steeping in it.
+
+25. KC-TH-04-chai-latte.png
+    A stone-grey ceramic cup of chai latte: creamy warm-tan spiced tea with a
+    light dusting of cinnamon.
+
+26. KC-TH-05-yemeni-tea.png
+    A small stone-grey ceramic cup of Yemeni tea: pale tan milky spiced tea with
+    faint cardamom flecks on the surface.
+
+27. KC-TH-06-moroccan-tea.png
+    A clear glass of Moroccan mint tea, pale green, with fresh mint leaves
+    inside the glass.
+
+28. KC-TH-07-herbal-tea.png
+    A clear glass cup of pale golden herbal infusion with a few loose dried
+    flowers and herb pieces visible in the liquid.
+
+29. KC-HK-01-hot-chocolate.png
+    A stone-grey ceramic mug of thick dark hot chocolate topped with a swirl of
+    whipped cream.
+
+30. KC-HK-02-hot-lotus.png
+    A stone-grey ceramic mug of creamy beige caramelised-biscuit latte, topped
+    with whipped cream and a crumb of crushed caramelised biscuit.
+
+
+================================================================================
+BATCH 4 of 5  —  Hot Kan (3) + Cold Kan (all 6) + Special (1-3)
+================================================================================
+
+31. KC-HK-03-hot-pistachio.png
+    A stone-grey ceramic mug of pistachio latte: pale green-tan milky drink with
+    a cream swirl and a crumb of crushed pistachio.
+
+32. KC-CK-01-mojito.png
+    A tall clear glass of non-alcoholic mojito: crushed ice, fresh mint leaves
+    and lime wedges in a pale green sparkling drink.
+
+33. KC-CK-02-iced-tea.png
+    A tall clear glass of iced tea: ice cubes, clear amber tea, one lemon slice.
+
+34. KC-CK-03-smoothies.png
+    A tall clear glass of thick berry-pink blended smoothie with a smooth even
+    surface.
+
+35. KC-CK-04-fresh-juice.png
+    A tall clear glass of freshly squeezed orange juice with light pulp and no
+    garnish.
+
+36. KC-CK-05-matcha.png
+    A tall clear glass of iced matcha latte: ice, vivid green matcha poured over
+    milk giving a clear green-to-white gradient.
+
+37. KC-CK-06-summer-passion.png
+    A tall clear glass of passionfruit cooler: ice, layered orange-to-yellow
+    liquid with visible passionfruit seeds.
+
+38. KC-SP-01-hot-arabian-latte.png
+    A stone-grey ceramic cup of Arabian latte: milky coffee tinted warm gold,
+    with faint cardamom and saffron flecks on the foam.
+
+39. KC-SP-02-hot-spanilla.png
+    A stone-grey ceramic cup of creamy pale-vanilla latte with a glossy surface
+    and fine vanilla specks.
+
+40. KC-SP-03-iced-arabian-latte.png
+    A tall clear glass of iced Arabian latte: ice, golden-tinted milky iced
+    coffee with cardamom flecks.
+
+
+================================================================================
+BATCH 5 of 5  —  Special (4-7)   [only 4 in this batch]
+================================================================================
+
+41. KC-SP-04-iced-spanilla.png
+    A tall clear glass of iced vanilla latte: ice, pale creamy vanilla iced
+    coffee with fine vanilla specks.
+
+42. KC-SP-05-pomberries-smoothie.png
+    A tall clear glass of thick deep-magenta pomegranate and berry smoothie with
+    a few pomegranate arils resting on the surface.
+
+43. KC-SP-06-matcha-strawberry-mango.png
+    A tall clear glass showing three distinct horizontal layers: green matcha at
+    the bottom, pink strawberry in the middle, yellow mango on top.
+
+44. KC-SP-07-affogato.png
+    A small clear glass cup holding a scoop of white vanilla ice cream with dark
+    espresso poured over it, just beginning to melt at the edges.
+
+
+--------------------------------------------------------------------------------
+4. AFTER GENERATING
+--------------------------------------------------------------------------------
+
+CHECK THE ALPHA BEFORE YOU UPLOAD 44 FILES. Open one on a dark background and
+one on a white background. If you can see a rectangle, it has no alpha and every
+tile will show that rectangle — regenerate rather than upload.
+
+Then: Inventory -> tap the product -> Product picture -> Choose image -> Save
+picture. Admin only. The upload warns you if the image has no transparency, so
+that warning is the second line of defence, not the first.
+
+To replace one later, upload again — it overwrites. To go back to the category
+artwork, use Remove.
