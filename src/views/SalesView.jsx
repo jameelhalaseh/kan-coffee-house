@@ -14,7 +14,7 @@ import printReceipt from '../receipt';
 import BillPaper, { billFromSale, PAPER } from '../components/BillPaper';
 import { beep } from '../sound';
 import { Overlay, NumPad, qtyBtn } from '../components/ui';
-import { categoryCards, inCat, CategoryGrid, CategoryHeader, catTitle } from '../components/categories';
+import { categoryCards, inCat, CategoryGrid, CategoryHeader, catTitle, useProductArt } from '../components/categories';
 import ProductModal from '../components/ProductModal';
 
 
@@ -27,6 +27,9 @@ import ProductModal from '../components/ProductModal';
 
 function SalesView({ user, notify }) {
   const [products, setProducts] = useState([]);
+  // Per-product pictures, when the shop has uploaded any. The lookup returns null for a
+  // product without one — the normal case — which leaves that tile exactly as it was.
+  const productArt = useProductArt();
   const [cart, setCart] = useState([]);          // [{id,barcode,name,price,qty}]
   // ONE query box, not two. There used to be a scan field and a separate search field
   // stacked on top of each other doing overlapping jobs, and the scanner's target was the
@@ -358,13 +361,19 @@ function SalesView({ user, notify }) {
         ) : (
         /* Step 2 — the items on that shelf (or the search hits across all of them). */
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(185px, 1fr))', gap: 12, alignContent: 'start' }}>
-          {tiles.map((p) => (
+          {tiles.map((p) => {
+            const tileArt = productArt(p.id);
+            return (
             <button key={p.id} onClick={() => addProduct(p)} className="rise" style={{
-              display: 'flex', flexDirection: 'column', justifyContent: 'space-between', gap: 6, height: 112, padding: '10px 12px 12px',
+              display: 'flex', alignItems: 'stretch', gap: 8, height: 112, padding: '10px 12px 12px',
               borderRadius: 12, border: `1px solid ${C.line}`, borderTop: `3px solid ${catColor(p.cat)}`,
               background: `linear-gradient(180deg, ${catColor(p.cat, 0.10)} 0%, ${C.panel2} 55%)`,
               color: C.text, cursor: 'pointer', textAlign: 'start', fontFamily: 'inherit', overflow: 'hidden',
             }}>
+            {/* Text column and picture are flex SIBLINGS, never an overlay — the same call
+                the category tile documents: siblings cannot collide, whereas a floating
+                image over a reserved percentage can, and did, with the longest names. */}
+            <span style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', justifyContent: 'space-between', gap: 6 }}>
               <span style={{ fontSize: 15, fontWeight: 700, lineHeight: 1.25, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
                 {p.name}{p.unit === 'kg' ? ' ⚖' : ''}
                 {p.size ? <span style={{ color: C.dim, fontWeight: 800 }}> · {p.size}</span> : ''}
@@ -386,8 +395,21 @@ function SalesView({ user, notify }) {
                       </span>
                     : <span style={{ fontSize: 11, color: C.dim }}>{p.cat || ''}</span>}
               </span>
+            </span>
+            {/* Bounded with clamp() so the picture grows on a wide counter monitor but can
+                never eat the name's column on a narrow one. contain, not cover: a cropped
+                cup reads worse than a small one, and the whole point is recognising it. */}
+            {tileArt && (
+              <img src={tileArt} alt="" aria-hidden="true" draggable="false" style={{
+                flex: '0 0 clamp(48px, 30%, 76px)', alignSelf: 'stretch', minWidth: 0,
+                marginInlineEnd: -4, marginBlock: -2,
+                objectFit: 'contain', objectPosition: 'center', pointerEvents: 'none',
+                filter: 'drop-shadow(0 6px 12px rgba(0,0,0,.45))',
+              }} />
+            )}
             </button>
-          ))}
+            );
+          })}
           {!tiles.length && (
             <div style={{ color: C.dim, fontSize: 15, gridColumn: '1/-1', padding: 40, textAlign: 'center' }}>
               <div style={{ fontSize: 52, marginBottom: 12, opacity: .45 }}>{searching ? '🔍' : '📦'}</div>

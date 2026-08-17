@@ -93,7 +93,7 @@ function InventoryView({ isAdmin, notify }) {
       </div>
       )}
       {editing && (
-        <ProductModal initial={editing} editing={!!editing.id} notify={notify}
+        <ProductModal initial={editing} editing={!!editing.id} notify={notify} isAdmin={isAdmin}
           onClose={() => setEditing(null)}
           onSaved={(p) => { setProducts((prev) => { const i = prev.findIndex((x) => x.id === p.id); return i >= 0 ? prev.map((x) => (x.id === p.id ? p : x)) : [...prev, p]; }); setEditing(null); }} />
       )}

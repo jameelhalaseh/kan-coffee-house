@@ -4,11 +4,135 @@ import { C, S } from '../theme';
 import { ARABIC } from '../client.config';
 import { catColor } from '../lib';
 import { Field, Overlay } from './ui';
+import normalizeCategoryImage from '../imageNormalize';
+import {
+  productArtFor, refreshProductArt, loadProductArt, productArtLoaded, subscribe as subscribeProductArt,
+} from '../productArt';
 
 // The shelf's usual bottles. Not an enum — see the free-text box beside them.
 const SIZE_PRESETS = ['500ml', '750ml', '1L'];
 
-function ProductModal({ initial, onClose, onSaved, notify, editing }) {
+// ── This product's own picture ────────────────────────────────────────────────
+// Inline in the product form rather than its own modal: the category version is a modal
+// because it is reached from a list of categories with nothing else to edit, whereas this is
+// one more field on a product you already have open. A modal inside a modal would be worse.
+//
+// Only rendered for a product that already EXISTS and only for an admin — an image needs an
+// id to hang on, and the tile is what a barista aims at, so whoever controls the picture
+// controls which product gets rung up. That is the same reasoning that makes pricing
+// admin-only in routes/products.js.
+function ProductImageField({ productId, notify }) {
+  const [preview, setPreview] = useState(null);   // { dataUrl, hasTransparency, bytes }
+  const [busy, setBusy] = useState(false);
+  const [, bump] = useState(0);
+  const fileRef = useRef(null);
+
+  useEffect(() => {
+    const off = subscribeProductArt(() => bump((n) => n + 1));
+    if (!productArtLoaded()) loadProductArt();
+    return off;
+  }, []);
+
+  const current = productArtFor(productId);
+  const shown = (preview && preview.dataUrl) || current;
+
+  const pick = async (file) => {
+    if (!file) return;
+    setBusy(true);
+    try {
+      // The same normaliser the category tiles use: trims to the subject, scales it to a
+      // consistent size and centres it on a 512x512 transparent canvas. The shop never picks
+      // a size or a format, so it cannot produce one that the server will reject.
+      setPreview(await normalizeCategoryImage(file));
+    } catch (ex) {
+      const msg = {
+        not_an_image: ARABIC ? 'الملف ليس صورة' : 'That file is not an image',
+        source_too_large: ARABIC ? 'الصورة كبيرة جداً' : 'That image is too large',
+        blank: ARABIC ? 'الصورة فارغة' : 'That image is empty',
+      }[ex.message] || (ARABIC ? 'تعذّر قراءة الصورة' : 'Could not read that image');
+      notify(msg, 'red');
+    } finally { setBusy(false); }
+  };
+
+  const save = async () => {
+    if (!preview) return;
+    setBusy(true);
+    try {
+      await api.put(`/product-images/${productId}`, { data: preview.dataUrl });
+      await refreshProductArt(productId);
+      setPreview(null);
+      notify(ARABIC ? 'تم حفظ الصورة' : 'Image saved', 'green');
+    } catch (ex) {
+      notify(ex.message === 'too_large' ? (ARABIC ? 'الصورة كبيرة جداً' : 'Image too large')
+        : (ARABIC ? 'فشل الحفظ' : 'Save failed'), 'red');
+    } finally { setBusy(false); }
+  };
+
+  const remove = async () => {
+    setBusy(true);
+    try {
+      await api.del(`/product-images/${productId}`);
+      await refreshProductArt(productId);
+      setPreview(null);
+      notify(ARABIC ? 'تمت إزالة الصورة' : 'Image removed', 'green');
+    } catch (_) { notify(ARABIC ? 'فشل' : 'Failed', 'red'); } finally { setBusy(false); }
+  };
+
+  return (
+    <Field label={ARABIC ? 'صورة المنتج' : 'Product picture'}>
+      <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+        {/* Previewed on the same gradient the real tile uses, so a picture that will look
+            wrong on the shelf looks wrong here too. */}
+        <div style={{
+          flex: '0 0 96px', height: 96, borderRadius: 12, border: `1px solid ${C.line}`,
+          background: `linear-gradient(180deg, ${catColor('x', 0.10)} 0%, ${C.panel2} 55%)`,
+          display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
+        }}>
+          {shown
+            ? <img src={shown} alt="" style={{ maxWidth: '86%', maxHeight: '86%', objectFit: 'contain' }} />
+            : <span style={{ fontSize: 26, opacity: .4 }}>🖼</span>}
+        </div>
+        <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <input ref={fileRef} type="file" accept="image/*" style={{ display: 'none' }}
+            onChange={(e) => { pick(e.target.files && e.target.files[0]); e.target.value = ''; }} />
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <button type="button" disabled={busy} onClick={() => fileRef.current && fileRef.current.click()}
+              style={{ ...S.btnGhost, padding: '8px 12px', fontSize: 13 }}>
+              {ARABIC ? 'اختر صورة' : 'Choose image'}
+            </button>
+            {preview && (
+              <button type="button" disabled={busy} onClick={save}
+                style={{ ...S.btn, padding: '8px 14px', fontSize: 13 }}>
+                {ARABIC ? 'حفظ الصورة' : 'Save picture'}
+              </button>
+            )}
+            {current && !preview && (
+              <button type="button" disabled={busy} onClick={remove}
+                style={{ ...S.btnGhost, padding: '8px 12px', fontSize: 13, borderColor: C.red, color: C.red }}>
+                {ARABIC ? 'إزالة' : 'Remove'}
+              </button>
+            )}
+          </div>
+          {/* THE WARNING THAT MATTERS. The tile is a colour gradient, so a picture that still
+              has its own background lands on it as a rectangular block. The browser cannot
+              cut a background out — but it can say so before the shop saves 44 of them. */}
+          {preview && !preview.hasTransparency && (
+            <div style={{ fontSize: 12, color: C.accent, lineHeight: 1.45 }}>
+              {ARABIC
+                ? 'هذه الصورة لا تحتوي على خلفية شفافة، وستظهر كمستطيل على البطاقة. استخدم صورة PNG بخلفية مزالة.'
+                : 'This image has no transparent background, so it will show as a rectangle on the tile. Use a cut-out PNG.'}
+            </div>
+          )}
+          <div style={{ fontSize: 11.5, color: C.dim }}>
+            {ARABIC ? 'يُحوَّل تلقائياً إلى 512×512 PNG شفاف.' : 'Normalised automatically to a 512×512 transparent PNG.'}
+          </div>
+        </div>
+      </div>
+    </Field>
+  );
+}
+
+function ProductModal({ initial, onClose, onSaved, notify, editing, isAdmin }) {
   const [barcode, setBarcode] = useState(initial.barcode || '');
   const [name, setName] = useState(initial.name || '');
   const [price, setPrice] = useState(initial.price != null ? String(initial.price) : '');
@@ -128,6 +252,13 @@ function ProductModal({ initial, onClose, onSaved, notify, editing }) {
               placeholder={ARABIC ? 'اسم الفئة الجديدة' : 'New category name'} />
           )}
         </Field>
+        {/* Needs an id to attach to, so it only appears once the product exists — a quick-add
+            from the till has nothing to hang a picture on yet. Saved independently of the
+            form's own Save, because it is a separate request to a separate endpoint and
+            pretending otherwise would mean one button that half-fails. */}
+        {editing && isAdmin && initial.id && (
+          <ProductImageField productId={initial.id} notify={notify} />
+        )}
         <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
           <button type="submit" disabled={busy} style={{ ...S.btn, flex: 1, opacity: busy ? 0.6 : 1 }}>{ARABIC ? 'حفظ' : 'Save'}</button>
           <button type="button" onClick={onClose} style={S.btnGhost}>{ARABIC ? 'إلغاء' : 'Cancel'}</button>

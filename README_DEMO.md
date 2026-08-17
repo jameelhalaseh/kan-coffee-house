@@ -62,6 +62,35 @@ a real supplier. (`seed:demo-sales-DESTRUCTIVE` exists but is deliberately out o
 Reseed prices any time with `npm run seed:products` — it is idempotent and deliberately does
 **not** reset `stock`, so a real count is never silently overwritten.
 
+## Product pictures
+
+Each product can carry its own cut-out image, shown on its sales tile beside the name.
+
+**Where:** Inventory → tap a product → **Product picture**. Admin only, and only for a product
+that already exists (a quick-add from the till has no id yet to attach an image to). The
+picture saves on its own button, separately from the form, because it is a separate request.
+
+**What to supply:** any image with a **transparent background**. It is normalised
+automatically to a 512×512 transparent PNG — trimmed to the subject, scaled and centred — so
+a phone photo, a 64px icon and a 4000px render all end up the same size on the shelf. You
+never pick a size or a format.
+
+⚠ **The browser cannot remove a background.** If the image still has one, the upload warns you
+and the tile will show a rectangular block on its gradient. Generate cut-outs in the first
+place: with OpenAI that means `gpt-image-1` with `background: "transparent"` — DALL·E 3 cannot
+produce alpha at all — or run any background remover before uploading.
+
+**Where the bytes live:** the `product_images` table (migration 0012), not a column on
+`products` and not the filesystem. A bytea column on `products` would drag ~150KB per row into
+the catalogue fetch every till makes at login; the filesystem is ephemeral on Heroku, so
+uploads would vanish on restart and the shop would find out weeks later. Images are served
+individually with a year-long `immutable` cache and an ETag, so each is fetched once per
+session. Deleting a product deletes its picture with it.
+
+Categories work the same way and are separate — Settings → Categories, stored in
+`category_images` (migration 0009). A product with no picture falls back to its category's
+artwork, then to the coloured letter badge.
+
 ## Tests
 
 ```bash

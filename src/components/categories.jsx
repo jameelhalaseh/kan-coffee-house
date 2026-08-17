@@ -5,6 +5,9 @@ import { C, S } from '../theme';
 import { ARABIC } from '../client.config';
 import { catColor } from '../lib';
 import { artFor, loadCategoryArt, artLoaded, subscribe } from '../categoryArt';
+import {
+  productArtFor, loadProductArt, productArtLoaded, subscribe as subscribeProductArt,
+} from '../productArt';
 
 // Re-render the shelf when a category's artwork arrives or is replaced. The lookup itself
 // lives in categoryArt.js — this hook only exists so React learns about it.
@@ -16,6 +19,20 @@ function useCategoryArt() {
     return off;
   }, []);
   return artFor;
+}
+
+// The same shape for the per-PRODUCT pictures on the item tiles. It lives here beside its
+// category twin so both screens reach for one module rather than each growing its own.
+// Returns a lookup that gives null for any product without an upload, which is the normal
+// case and not a gap: the tile simply looks the way it did before.
+function useProductArt() {
+  const [, bump] = useState(0);
+  useEffect(() => {
+    const off = subscribeProductArt(() => bump((n) => n + 1));
+    if (!productArtLoaded()) loadProductArt();
+    return off;
+  }, []);
+  return productArtFor;
 }
 
 const ALL_CAT = 'all';
@@ -151,4 +168,4 @@ const catTitle = (cat) => (cat === ALL_CAT ? (ARABIC ? 'كل الأصناف' : '
   : cat === NO_CAT ? (ARABIC ? 'بدون فئة' : 'Uncategorised') : cat);
 
 
-export { ALL_CAT, NO_CAT, categoryCards, inCat, CategoryGrid, CategoryHeader, catTitle };
+export { ALL_CAT, NO_CAT, categoryCards, inCat, CategoryGrid, CategoryHeader, catTitle, useProductArt };

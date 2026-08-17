@@ -332,6 +332,11 @@ async function handle(method, path, body) {
     if (method === 'DELETE') { db.users = db.users.filter((x) => x.id !== parts[1]); save(db); return { ok: true }; }
   }
 
+  // The demo has no image store, and an empty manifest is the honest answer: no product has
+  // a picture here. Answered explicitly rather than falling through to the 404 below, so the
+  // demo does not log a rejected request on every load for something that is simply absent.
+  if (top === 'product-images') return [];
+
   err('not_found', 404);
 }
 
