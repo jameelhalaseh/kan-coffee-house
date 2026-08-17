@@ -2,7 +2,12 @@
 # Mirrors what Heroku did (heroku-postbuild + web: node server/index.js), just explicit.
 
 # ── Stage 1: build the React bundle ──────────────────────────────────────────
-FROM node:20-alpine AS build
+# node:24 (npm 11), NOT node:20 (npm 10). This must stay in step with node-version in
+# .github/workflows/*.yml and with whatever npm regenerates package-lock.json: npm 10
+# rejects this lock with "Missing: yaml@2.9.0 from lock file" and the image build dies at
+# `npm ci` below. Three places pin a Node version — both workflows and here — and this one
+# is the easy one to forget, because a green test job says nothing about the image.
+FROM node:24-alpine AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
@@ -14,7 +19,7 @@ COPY . .
 RUN CI=true INLINE_RUNTIME_CHUNK=false npm run build
 
 # ── Stage 2: runtime ─────────────────────────────────────────────────────────
-FROM node:20-alpine AS runtime
+FROM node:24-alpine AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=3001
