@@ -14,7 +14,7 @@
 import React, { useEffect, useState } from 'react';
 import { C } from '../theme';
 import { ARABIC } from '../client.config';
-import { subscribe, getState, flush, deriveStatus, SYNCED, SYNCING, PENDING, OFFLINE } from '../sync';
+import { subscribe, getState, flush, deriveStatus, SYNCED, SYNCING, PENDING, OFFLINE, STALLED } from '../sync';
 
 export function useSync() {
   const [s, setS] = useState(getState);
@@ -31,6 +31,11 @@ export function label(status, pending) {
       ? (ARABIC ? `غير متزامن (${pending})` : `Not synced (${pending})`)
       : (ARABIC ? 'غير متصل' : 'Not connected');
     case PENDING: return ARABIC ? `بانتظار المزامنة (${pending})` : `Pending (${pending})`;
+    // Names the action, not the state. By this point the till has stopped trying and the
+    // only thing that changes anything is somebody tapping it.
+    case STALLED: return pending === 1
+      ? (ARABIC ? 'فشلت مزامنة فاتورة — اضغط' : 'Sale failed to sync — tap')
+      : (ARABIC ? `فشلت مزامنة ${pending} فواتير — اضغط` : `${pending} sales failed to sync — tap`);
     default: return ARABIC ? 'متزامن' : 'Synced';
   }
 }
@@ -40,17 +45,18 @@ const TONE = {
   [SYNCING]: { fg: C.dim, dot: C.dim },
   [PENDING]: { fg: C.accent, dot: C.accent },
   [OFFLINE]: { fg: C.red, dot: C.red },
+  [STALLED]: { fg: C.red, dot: C.red },
 };
 
 export default function SyncBadge() {
   const s = useSync();
   const status = deriveStatus(s);
   const tone = TONE[status] || TONE[SYNCED];
-  const bad = status === OFFLINE || status === PENDING;
+  const bad = status === OFFLINE || status === PENDING || status === STALLED;
 
   return (
     <button
-      onClick={() => flush()}
+      onClick={() => flush({ manual: true })}
       title={ARABIC ? 'اضغط لإعادة المحاولة الآن' : 'Tap to retry now'}
       style={{
         display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7,

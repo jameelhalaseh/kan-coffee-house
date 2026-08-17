@@ -2,8 +2,8 @@
 // rather than component state.
 import {
   deriveStatus, nextDelay, RETRY_MS, enqueue, flush, getState, subscribe,
-  reportNetworkResult, readPending, _reset,
-  SYNCED, SYNCING, PENDING, OFFLINE,
+  reportNetworkResult, readPending, _reset, MAX_ATTEMPTS,
+  SYNCED, SYNCING, PENDING, OFFLINE, STALLED,
 } from './sync';
 import { PENDING_KEY } from './constants';
 
@@ -51,8 +51,106 @@ describe('retry backoff', () => {
     expect(nextDelay(1)).toBeGreaterThan(nextDelay(0));
   });
 
-  test('caps rather than growing forever — a till must never stop trying', () => {
+  test('the delay caps rather than growing forever', () => {
     expect(nextDelay(99)).toBe(RETRY_MS[RETRY_MS.length - 1]);
+  });
+});
+
+describe('giving up after MAX_ATTEMPTS', () => {
+  // A sale the server will never accept used to sit at the head of the queue and block every
+  // sale behind it, retrying every two minutes until closing with nothing on screen saying so.
+  const reject = (status) => ({
+    getInvoice: async () => 1,
+    postOrder: async () => { const e = new Error('nope'); e.status = status; throw e; },
+  });
+
+  // `status` is passed explicitly everywhere — a default here would swallow the deliberate
+  // `undefined` that stands for "nothing answered at all".
+  const failTimes = async (n, status) => {
+    for (let i = 0; i < n; i += 1) {
+      await flush(reject(status));            // eslint-disable-line no-await-in-loop
+      jest.advanceTimersByTime(RETRY_MS[RETRY_MS.length - 1]);
+    }
+  };
+
+  beforeEach(() => jest.useFakeTimers());
+  afterEach(() => jest.useRealTimers());
+
+  test('keeps retrying right up to the limit', async () => {
+    enqueue(sale('a'));
+    await failTimes(MAX_ATTEMPTS - 1, 400);
+    expect(getState().stalled).toBe(false);
+    expect(deriveStatus(getState())).not.toBe(STALLED);
+  });
+
+  test('stops trying at the limit and says so', async () => {
+    enqueue(sale('a'));
+    await failTimes(MAX_ATTEMPTS, 400);
+    expect(getState().stalled).toBe(true);
+    expect(deriveStatus(getState())).toBe(STALLED);
+  });
+
+  test('stopping never discards the sale — that is the entire point', async () => {
+    enqueue(sale('a')); enqueue(sale('b'));
+    await failTimes(MAX_ATTEMPTS, 400);
+    expect(readPending().map((s) => s.id)).toEqual(['a', 'b']);
+    expect(getState().pending).toBe(2);
+  });
+
+  test('an automatic flush does nothing once stalled', async () => {
+    enqueue(sale('a'));
+    await failTimes(MAX_ATTEMPTS, 400);
+    let tried = 0;
+    await flush({ getInvoice: async () => { tried += 1; return 1; }, postOrder: async () => {} });
+    expect(tried).toBe(0);
+    expect(readPending()).toHaveLength(1);
+  });
+
+  test('a manual retry starts the attempts over and clears the stall', async () => {
+    enqueue(sale('a'));
+    await failTimes(MAX_ATTEMPTS, 400);
+    const sent = [];
+    await flush({ manual: true, getInvoice: async () => 1, postOrder: async (s) => { sent.push(s.id); } });
+    expect(sent).toEqual(['a']);
+    expect(getState().stalled).toBe(false);
+    expect(readPending()).toHaveLength(0);
+    expect(deriveStatus(getState())).toBe(SYNCED);
+  });
+
+  test('the alert fires once per stall, not once per attempt', async () => {
+    enqueue(sale('a'));
+    await failTimes(MAX_ATTEMPTS, 400);
+    const after = getState().stalledTick;
+    expect(after).toBe(1);
+    await failTimes(3, 400);                      // still stalled; must not shout again
+    expect(getState().stalledTick).toBe(after);
+  });
+
+  test('the server coming back resumes a queue that stalled during an outage', async () => {
+    // undefined status = nothing answered, which is what an outage looks like to fetch.
+    enqueue(sale('a'));
+    await failTimes(MAX_ATTEMPTS, undefined);
+    expect(getState().stalled).toBe(true);
+    reportNetworkResult(true);               // api.js: something finally answered
+    expect(getState().stalled).toBe(false);
+  });
+
+  test('a request answering does NOT resume a queue stalled on a rejected sale', async () => {
+    // The opposite case, and the reason the two are not the same switch: a 4xx means the
+    // server was reachable the whole time, so "the server answered" is not new information
+    // and must not silently restart a retry loop that will fail identically.
+    enqueue(sale('a'));
+    await failTimes(MAX_ATTEMPTS, 400);
+    reportNetworkResult(true);
+    expect(getState().stalled).toBe(true);
+  });
+
+  test('draining the queue clears the stall for sales rung afterwards', async () => {
+    enqueue(sale('a'));
+    await failTimes(MAX_ATTEMPTS, 400);
+    await flush({ manual: true, getInvoice: async () => 1, postOrder: async () => {} });
+    expect(getState().stalled).toBe(false);
+    expect(getState().stalledTick).toBe(1);
   });
 });
 

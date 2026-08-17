@@ -20,6 +20,7 @@ import CustomerDisplay from './components/CustomerDisplay';
 import ChangePasswordModal from './components/ChangePasswordModal';
 import { Centered } from './components/ui';
 import Toasts, { TOAST_MS, toastCap } from './components/Toasts';
+import { useSync } from './components/SyncBadge';
 
 import Login from './views/Login';
 import SalesView from './views/SalesView';
@@ -148,6 +149,22 @@ export default function App() {
       notify(ARABIC ? 'انتهت الجلسة، سجّل الدخول من جديد' : 'Session expired — please log in again', 'red');
     });
   }, [notify]);
+
+  // The queue gave up retrying. The badge already says so, but the badge lives in the sidebar
+  // and a cashier ringing sales is not looking at it — a queue that has stopped moving is
+  // exactly the failure that otherwise goes unnoticed until cash-up. So it is said once,
+  // loudly, at the moment it happens. Keyed on stalledTick rather than the flag so it fires
+  // once per stall and not on every re-render while the stall persists.
+  const { stalledTick, pending } = useSync();
+  useEffect(() => {
+    if (!stalledTick) return;
+    notify(
+      ARABIC
+        ? `توقفت المزامنة: ${pending} فاتورة لم تُرسل. اضغط مؤشر المزامنة لإعادة المحاولة.`
+        : `Sync stopped: ${pending} sale(s) not sent. Tap the sync badge to retry.`,
+      'red',
+    );
+  }, [stalledTick]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleLogin = (u) => {
     api.setToken(u.token);

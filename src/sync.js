@@ -22,6 +22,7 @@ export const SYNCED = 'synced';     // queue empty AND the server is answering
 export const SYNCING = 'syncing';   // actively flushing
 export const PENDING = 'pending';   // queued, server reachable, waiting its turn
 export const OFFLINE = 'offline';   // the server is not answering
+export const STALLED = 'stalled';   // gave up retrying; a person has to intervene
 
 // Backoff between automatic retries. Short at first because most outages are a few seconds
 // of flaky wifi, then longer so a server that is genuinely down is not hammered by thirty
@@ -29,11 +30,28 @@ export const OFFLINE = 'offline';   // the server is not answering
 export const RETRY_MS = [5000, 10000, 30000, 60000, 120000];
 export const nextDelay = (attempt) => RETRY_MS[Math.min(attempt, RETRY_MS.length - 1)];
 
+// After this many consecutive failed flushes the till stops trying by itself.
+//
+// The cap is not about sparing the server — the backoff already does that. It is about the
+// silent failure underneath: a sale the server keeps refusing (a 400 it will refuse forever,
+// a row it will not accept) sits at the head of the queue and blocks every sale behind it,
+// retrying every two minutes until closing time with nothing on screen that says anyone
+// needs to look. Ten attempts is roughly fifteen minutes of backoff — long enough that no
+// ordinary outage reaches it, short enough that a shop finds out during the shift rather
+// than at cash-up.
+//
+// Stopping does NOT discard anything. The queue stays on disk, the badge turns red and says
+// so, and tapping it starts over. That is the whole intervention.
+export const MAX_ATTEMPTS = 10;
+
 // The single rule for what the badge shows. Order matters and is the whole point:
 // unreachable outranks a count, because an empty queue with a dead server is NOT "synced" —
 // it is idle and disconnected, and showing green there would be the worst lie available.
-export function deriveStatus({ pending, syncing, reachable }) {
+export function deriveStatus({ pending, syncing, reachable, stalled }) {
   if (syncing) return SYNCING;
+  // Outranks everything except an in-flight attempt: this is the one state the till will not
+  // leave on its own, so it must not be dressed up as an outage that might still clear.
+  if (stalled && pending > 0) return STALLED;
   if (reachable === false) return OFFLINE;
   if (pending > 0) return PENDING;
   return SYNCED;
@@ -58,6 +76,11 @@ let state = {
   reachable: null,
   syncedTick: 0,        // bumps when a flush lands, so views can react once per flush
   lastSyncedCount: 0,
+  // Automatic retries have been given up on; only a person restarts them. Separate from
+  // `reachable` because the two are independent: a stalled queue usually sits in FRONT of a
+  // server that is answering perfectly well and simply refusing one sale.
+  stalled: false,
+  stalledTick: 0,       // bumps once per stall, so the shell can raise exactly one alert
 };
 
 const listeners = new Set();
@@ -78,8 +101,10 @@ export function reportNetworkResult(answered) {
   if (answered && state.reachable !== true) {
     set({ reachable: true });
     // Came back. Flush immediately rather than waiting out the current backoff — the whole
-    // point of the queue is that it drains the moment it can.
-    flush();
+    // point of the queue is that it drains the moment it can. Treated as manual because a
+    // server that has visibly returned is new evidence, and a queue that stalled during the
+    // outage should not stay stuck once the thing it was waiting for is back.
+    flush({ manual: true });
   } else if (!answered) {
     set({ reachable: false });
   }
@@ -101,14 +126,26 @@ let attempt = 0;
 let timer = null;
 export function scheduleRetry() {
   if (timer) return;
+  if (attempt >= MAX_ATTEMPTS) {
+    // Out of automatic attempts. Nothing is dropped — the queue is still on disk and still
+    // counted; what stops is this module trying on its own. stalledTick bumps once per stall
+    // so the shell raises one alert rather than one per attempt.
+    if (!state.stalled) set({ stalled: true, stalledTick: state.stalledTick + 1 });
+    return;
+  }
   timer = setTimeout(() => { timer = null; flush(); }, nextDelay(attempt));
 }
 function clearRetry() { if (timer) { clearTimeout(timer); timer = null; } attempt = 0; }
 
 // Serial, and stops at the first failure so invoice order is preserved and nothing is lost.
 // Each sale takes a fresh invoice number at the moment it lands, not when it was rung.
-export async function flush({ getInvoice, postOrder } = {}) {
+// `manual` is a person asking: tapping the badge. It clears a stall and starts the attempt
+// count over, which is the only way out of one. An automatic call never does this — that
+// would turn the cap into a no-op.
+export async function flush({ getInvoice, postOrder, manual = false } = {}) {
   if (state.syncing) return;
+  if (manual) { clearRetry(); set({ stalled: false }); }
+  else if (state.stalled) return;   // gave up; wait for a person
   let list = readPending();
   if (!list.length) { set({ syncing: false }); return; }
 
@@ -148,7 +185,9 @@ export async function flush({ getInvoice, postOrder } = {}) {
       pending: list.length,
       syncing: false,
       ...(synced ? { syncedTick: state.syncedTick + 1, lastSyncedCount: synced } : null),
-      ...(drained ? { reachable: true } : null),
+      // An emptied queue is not stalled by definition, and leaving the flag set would keep
+      // blocking automatic flushes for sales rung after the problem was over.
+      ...(drained ? { reachable: true, stalled: false } : null),
     });
     if (list.length) { attempt += 1; scheduleRetry(); } else { clearRetry(); }
   }
@@ -164,8 +203,10 @@ export function start() {
   // The demo build swaps in demoApi, which has no network to report on. Guarded rather than
   // required, so the demo keeps booting.
   if (typeof api.setOnNetworkResult === 'function') api.setOnNetworkResult(reportNetworkResult);
-  flush();
-  const onOnline = () => flush();
+  // Manual: a stall is deliberately NOT persisted, so opening the app is itself the person
+  // intervening. Whatever went wrong last session gets one fresh run of attempts.
+  flush({ manual: true });
+  const onOnline = () => flush({ manual: true });
   window.addEventListener('online', onOnline);
   return () => {
     window.removeEventListener('online', onOnline);
@@ -178,7 +219,8 @@ export function start() {
 export function _reset(next = {}) {
   clearRetry();
   state = {
-    pending: 0, syncing: false, reachable: null, syncedTick: 0, lastSyncedCount: 0, ...next,
+    pending: 0, syncing: false, reachable: null, syncedTick: 0, lastSyncedCount: 0,
+    stalled: false, stalledTick: 0, ...next,
   };
   listeners.clear();
   started = false;
