@@ -102,7 +102,12 @@ function Login({ onLogin }) {
         {err && <div style={{ color: C.red, fontSize: 14 }}>{err}</div>}
         {process.env.REACT_APP_DEMO === '1' && (
           <div style={{ background: C.panel2, border: `1px solid ${C.line}`, borderRadius: 8, padding: 10, fontSize: 12, color: C.dim, textAlign: 'center' }}>
-            DEMO — no backend. Sign in: <b style={{ color: C.accent }}>admin</b> / any password<br />or <b style={{ color: C.accent }}>cashier</b> (limited views). Data is local to your browser.
+            {/* These names MUST match the users seeded in src/demoApi.js. They previously read
+                admin / cashier, which the fork renamed to Kan's real roles — leaving a banner
+                that told every visitor to sign in as an account the mock no longer had. */}
+            DEMO — no backend, nothing saved beyond this browser. Sign in as{' '}
+            <b style={{ color: C.accent }}>owner</b>, <b style={{ color: C.accent }}>manager</b> or{' '}
+            <b style={{ color: C.accent }}>barista1</b> with <b style={{ color: C.accent }}>any password</b>.
           </div>
         )}
         <button type="submit" disabled={busy} style={{ ...S.btn, padding: '16px', fontSize: 18, opacity: busy ? 0.6 : 1 }}>{busy ? '…' : (ARABIC ? 'دخول' : 'Login')}</button>
