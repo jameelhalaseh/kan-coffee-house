@@ -1,6 +1,7 @@
 /* eslint-disable */
-// Dukkan — single-store, barcode-driven liquor POS.
-// Scan → cart → checkout. No floors, no recipes: a product catalogue plus a sales screen.
+// Kan Coffee House — single-store, counter-service cafe POS.
+// Tap → cart → checkout. No scanner, no floors, no recipes: a product catalogue plus a
+// sales screen; drinks are rung from category chips rather than scanned.
 // Talks to the Express API via src/api.js (Bearer session token). The store key is fixed
 // to DEFAULT_FLOOR ("main") wherever the generic orders/invoice API needs a store id.
 //

@@ -6,24 +6,16 @@ import SyncBadge from './SyncBadge';
 
 const VIEW_ICONS = { sales: '🛒', inventory: '📦', receive: '📥', history: '🧾', reports: '📊', storereports: '📈', assistant: '🤖', settings: '⚙️' };
 
-// Clock In/Out for the logged-in employee.
-function ClockButton() {
-  const [open, setOpen] = useState(null); // open punch or null
-  const [busy, setBusy] = useState(false);
-  useEffect(() => { api.get('/timeclock/status').then(setOpen).catch(() => {}); }, []);
-  const toggle = async () => {
-    setBusy(true);
-    try {
-      if (open) { await api.post('/timeclock/out'); setOpen(null); }
-      else { await api.post('/timeclock/in'); api.get('/timeclock/status').then(setOpen); }
-    } catch (_) {} finally { setBusy(false); }
-  };
-  return (
-    <button onClick={toggle} disabled={busy} style={{ ...S.btnGhost, height: 64, fontSize: 14, ...(open ? { borderColor: C.green, color: C.green } : {}) }}>
-      {open ? (ARABIC ? '🟢 خروج' : '🟢 Clock Out') : (ARABIC ? '🕐 دخول' : '🕐 Clock In')}
-    </button>
-  );
-}
+// Clock In/Out was REMOVED for Kan Coffee House — the owner did not want a time-clock at
+// intake, and unlike the other features it has no env switch: the button was hardcoded
+// here and the staff-hours block was hardcoded in ReportsView. Removing the UI is the only
+// way to honour that answer.
+//
+// The server routes (server/routes/timeclock.js) and the time_clock table are LEFT INTACT
+// on purpose: nothing calls them, they cost nothing idle, and switching the feature back on
+// becomes a UI change rather than a migration. If Kan later wants it, restore this
+// component from the template — and better, add the missing feature flag upstream so the
+// next cafe is an .env line instead of a fork.
 
 // Bell badge: low-stock count, with a dropdown list. (Expiry was the other half of this
 // panel and was always empty in a liquor store — see migration 0007.)
@@ -107,7 +99,6 @@ function Sidebar({ user, view, setView, navViews, onLogout, canSeeStock, onChang
             know whether the till is getting through. */}
         <SyncBadge />
         {canSeeStock && <NotificationsBell />}
-        <ClockButton />
         <div style={{ display: 'flex', gap: 10 }}>
           <button onClick={toggleLang} style={{ ...S.btnGhost, flex: 1, height: 56, fontSize: 16 }}>{ARABIC ? '🌐 English' : '🌐 عربي'}</button>
           {/* Day/night. Reloads the page — see the note in src/theme.js: the palette is read

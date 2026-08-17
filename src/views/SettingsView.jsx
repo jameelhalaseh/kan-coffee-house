@@ -16,7 +16,7 @@ const SETTINGS_TABS = [
   { key: 'categories', en: 'Categories', ar: 'الفئات', icon: '🏷' },
   { key: 'users', en: 'Users & permissions', ar: 'المستخدمون والصلاحيات', icon: '👥' },
 ];
-const TAB_KEY = 'liquor_store_settings_tab';
+const TAB_KEY = 'kan_coffee_settings_tab';
 
 function SettingsView({ user, isAdmin, notify }) {
   const [tab, setTab] = useState(() => {

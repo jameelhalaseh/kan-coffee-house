@@ -19,7 +19,6 @@ function ReportsView({ notify }) {
   const [low, setLow] = useState([]);
   const [abc, setAbc] = useState([]);
   const [zrep, setZrep] = useState(null);
-  const [hours, setHours] = useState([]);
   const [orders, setOrders] = useState([]);     // raw orders → hourly chart, staff sales, dead stock, CSV
   const [products, setProducts] = useState([]);
 
@@ -30,7 +29,7 @@ function ReportsView({ notify }) {
     api.get('/reports/low-stock').then(setLow).catch(() => {});
     api.get('/reports/abc' + qs).then(setAbc).catch(() => {});
     api.get('/reports/zreport?date=' + today).then(setZrep).catch(() => {});
-    api.get('/timeclock' + qs).then(setHours).catch(() => {});
+    // No /timeclock fetch — the time-clock is off for Kan (see src/components/Sidebar.jsx).
     api.get('/orders?floor=' + DEFAULT_FLOOR + '&limit=100000').then(setOrders).catch(() => {});
     api.get('/products').then(setProducts).catch(() => {});
   }, [from, to, today, notify]);
@@ -64,7 +63,6 @@ function ReportsView({ notify }) {
   orders.filter((o) => dayOf(o) >= cutoff && o.status !== 'refund').forEach((o) => (o.items || []).forEach((l) => soldIds.add(l.id)));
   const deadStock = products.filter((p) => p.active !== false && Number(p.stock) > 0 && !soldIds.has(p.id));
 
-  const hoursByUser = Object.values(hours.reduce((m, h) => { (m[h.username] = m[h.username] || { username: h.username, hours: 0 }).hours += Number(h.hours) || 0; return m; }, {}));
   const topMax = Math.max(...top.map((t) => Number(t.revenue) || 0), 1);
   const abcBadge = (cls) => ({ A: C.green, B: C.accent, C: C.dim }[cls]);
 
@@ -281,15 +279,9 @@ function ReportsView({ notify }) {
             ))}
             {!staffSales.length && <div style={{ color: C.dim, fontSize: 13 }}>{ARABIC ? 'لا مبيعات في الفترة' : 'No sales in range'}</div>}
           </div>
-          <div style={S.card}>
-            <div style={{ fontWeight: 800, marginBottom: 8 }}>🕐 {ARABIC ? 'ساعات الدوام' : 'Clocked hours'}</div>
-            {hoursByUser.map((h) => (
-              <div key={h.username} style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0', borderBottom: `1px solid ${C.line}`, fontSize: 14 }}>
-                <span>{h.username}</span><span style={{ color: C.dim }}>{h.hours.toFixed(2)} {ARABIC ? 'ساعة' : 'h'}</span>
-              </div>
-            ))}
-            {!hoursByUser.length && <div style={{ color: C.dim, fontSize: 13 }}>{ARABIC ? 'لا سجلّات' : 'No punches'}</div>}
-          </div>
+          {/* "Clocked hours" card removed with the time-clock — see the note in
+              src/components/Sidebar.jsx. A card that could only ever read "No punches" is
+              worse than no card: it looks like a broken feature rather than an absent one. */}
         </div>
       )}
     </div>

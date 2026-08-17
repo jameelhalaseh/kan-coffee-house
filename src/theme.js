@@ -13,7 +13,7 @@
 // So the theme is chosen HERE, at import, and switching persists the choice and reloads —
 // exactly the pattern setLang() already uses for the AR/EN toggle in this codebase. A till
 // changes theme roughly never; correctness is worth more than avoiding one reload.
-const THEME_KEY = 'liquor_store_theme';
+const THEME_KEY = 'kan_coffee_theme';
 
 const PALETTES = {
   // The original. Unchanged, so nothing about the night look shifts by adding a day one.

@@ -1,6 +1,8 @@
-// Apply server/seed-products.sql (demo catalogue: categories, suppliers, products)
-// against DATABASE_URL. Cross-platform alternative to psql. Idempotent — re-running
-// re-syncs prices/stock to the seed values.
+// Apply server/seed-products.sql (Kan's real menu: categories + products) against
+// DATABASE_URL. Cross-platform alternative to psql. Idempotent — re-running re-syncs
+// prices/categories, but deliberately leaves `stock` alone so a real count is never
+// silently reset. No suppliers are seeded; Kan adds their own in Receive, so the
+// supplier count below is expected to read 0 until they do.
 //   npm run seed:products
 try { require('dotenv').config(); } catch (_) {}
 

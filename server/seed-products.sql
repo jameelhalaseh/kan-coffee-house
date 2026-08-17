@@ -1,107 +1,123 @@
--- Liquor Store POS — demo catalogue seed.
--- Idempotent: products upsert on the unique barcode, suppliers upsert on name.
+-- Kan Coffee House POS — catalogue seed (the shop's REAL drinks menu).
+-- Idempotent: products upsert on the unique barcode.
 -- Apply AFTER `npm run migrate`:
 --   psql "$DATABASE_URL" -f server/seed-products.sql
 --   or: npm run seed:products
+--
+-- ── Three things about this catalogue that are deliberate ─────────────────────
+--
+-- 1. THE `barcode` VALUES ARE SYNTHETIC INTERNAL SKUs, NOT SCANNABLE CODES.
+--    Kan has no barcode scanner and an espresso has no barcode. But `barcode` is the
+--    UNIQUE column this seed upserts on, and in Postgres NULL never conflicts with NULL
+--    — so 44 NULL barcodes would make `on conflict (barcode)` match nothing and every
+--    re-run would insert 44 more rows. `KC-HC-01`-style keys keep the seed genuinely
+--    idempotent. They also disambiguate the three drinks that appear on the menu twice
+--    (Spanish Latte, Caramel Macchiato, Dark/White Mocha — hot and cold, different
+--    prices, same name at the owner's request).
+--
+-- 2. MADE-TO-ORDER DRINKS CARRY stock = 9999 AND low_at = 0.
+--    This template is a retail POS: checkout deducts stock for every catalogue line
+--    (server/routes/orders.js) and there is no "this item isn't stocked" flag. A latte
+--    has no meaningful unit count. Seeding 0 would paint a red "Out" pill on all 44
+--    tiles permanently (src/views/SalesView.jsx:378 — the `stock <= 0` branch wins
+--    before low_at is even consulted), training staff to ignore the badge that is
+--    supposed to mean something. A high count with low_at = 0 shows a clean tile and
+--    never raises a low-stock alert.
+--    CONSEQUENCE: the number drifts down by one per drink sold and will need an
+--    occasional reset in Inventory. The real fix is a non-stock-item flag in the
+--    template — a gap worth closing upstream, not per shop.
+--    Cold Brew Bottle is the exception: it IS a physical stocked item, so it gets a
+--    real count and a real reorder point.
+--
+-- 3. cost = 0 EVERYWHERE, BECAUSE KAN HAS NOT SUPPLIED COSTS.
+--    Zero rather than NULL so profit sums stay numeric instead of turning NULL. The
+--    visible effect is that Financials / P&L reports 100% margin on every line. That is
+--    an honest "no cost data yet" state, not a real figure — load costs before showing
+--    the owner the P&L tab.
+--
+-- Prices are TAX-INCLUSIVE (16% VAT extracted on the receipt): Espresso 2.00 = 1.72
+-- net + 0.28 VAT. Taken from Kan's published drinks menu.
+--
+-- NO SUPPLIERS ARE SEEDED. The liquor template shipped four with invented names and
+-- phone numbers; inventing vendor records for a real business is not acceptable. Kan
+-- adds their real suppliers in the Receive view, and Receive stays unusable until they do.
 
 begin;
 
 -- ── Categories (drives the chips on Sales + Inventory) ───────────────────────
+-- Order matters: this is the left-to-right chip order at the counter, arranged the way
+-- the printed menu reads so a barista's eye lands where it already expects to.
 insert into app_settings(key, value) values
-  ('categories', '["Whiskey","Vodka","Gin","Rum","Tequila","Brandy","Arak","Liqueur","Wine","Beer","Champagne","Mixers","Accessories"]')
+  ('categories', '["Hot Coffee","Cold Coffee","Tea & Herbs","Hot Kan","Cold Kan","Special"]')
 on conflict (key) do update set value = excluded.value;
 
--- ── Suppliers (Receive view) ─────────────────────────────────────────────────
-insert into suppliers (name, phone, note, active) values
-  ('Levant Spirits Import',  '+962 6 500 1100', 'Main spirits distributor — weekly delivery', true),
-  ('Amman Beverage Co.',     '+962 6 500 2200', 'Beer + mixers, Sunday/Wednesday',            true),
-  ('Cellar Direct Wines',    '+962 7 900 3300', 'Wine & champagne, order 3 days ahead',       true),
-  ('Local Arak Distillery',  '+962 7 900 4400', 'Arak only, cash on delivery',                true)
--- Genuinely idempotent now: migration 0008 added the unique index this clause needs.
--- Before that index existed, `on conflict do nothing` only guarded the serial primary key
--- (which cannot conflict), so every re-run of this seed inserted four more suppliers.
-on conflict (lower(btrim(name))) do update
-  set phone = excluded.phone, note = excluded.note, active = excluded.active;
-
 -- ── Catalogue ────────────────────────────────────────────────────────────────
--- barcode | name | price (JOD, tax-inclusive display) | cat | cost | stock | unit
-insert into products (barcode, name, price, cat, cost, stock, unit, active) values
-  -- Whiskey
-  ('5000267023656', 'Johnnie Walker Black Label 750ml', 38.00, 'Whiskey',     26.50, 24, 'ea', true),
-  ('5000267014302', 'Johnnie Walker Red Label 750ml',   24.00, 'Whiskey',     16.00, 30, 'ea', true),
-  ('5000267170800', 'Johnnie Walker Blue Label 750ml',  185.00,'Whiskey',    148.00,  4, 'ea', true),
-  ('5010314302108', 'Jack Daniel''s Old No.7 700ml',     32.00, 'Whiskey',     22.00, 28, 'ea', true),
-  ('5010106113127', 'Glenfiddich 12yr 700ml',            52.00, 'Whiskey',     38.00, 12, 'ea', true),
-  ('5010314100109', 'Chivas Regal 12yr 700ml',           40.00, 'Whiskey',     28.00, 18, 'ea', true),
-  ('5010103801003', 'Ballantine''s Finest 1L',           27.00, 'Whiskey',     18.50, 22, 'ea', true),
-  ('0080686032106', 'Jameson Irish Whiskey 700ml',       30.00, 'Whiskey',     21.00,  3, 'ea', true),
-  -- Vodka
-  ('5452000032102', 'Absolut Vodka 700ml',               22.00, 'Vodka',       14.50, 36, 'ea', true),
-  ('7610100010005', 'Smirnoff Red No.21 1L',             19.00, 'Vodka',       12.00, 40, 'ea', true),
-  ('4750021000188', 'Grey Goose 700ml',                  55.00, 'Vodka',       41.00,  9, 'ea', true),
-  ('5060045490018', 'Belvedere 700ml',                   52.00, 'Vodka',       39.00,  2, 'ea', true),
-  ('8710128000042', 'Stolichnaya 700ml',                 21.00, 'Vodka',       13.50, 15, 'ea', true),
-  -- Gin
-  ('5010677714002', 'Tanqueray London Dry 700ml',        29.00, 'Gin',         20.00, 16, 'ea', true),
-  ('5000299221136', 'Bombay Sapphire 700ml',             31.00, 'Gin',         21.50, 14, 'ea', true),
-  ('5010327755113', 'Hendrick''s Gin 700ml',             47.00, 'Gin',         35.00,  6, 'ea', true),
-  ('5000289927796', 'Gordon''s London Dry 1L',           20.00, 'Gin',         13.00, 20, 'ea', true),
-  -- Rum
-  ('7501035042001', 'Bacardi Carta Blanca 750ml',        21.00, 'Rum',         14.00, 26, 'ea', true),
-  ('5010296003468', 'Captain Morgan Spiced Gold 1L',     25.00, 'Rum',         17.00, 18, 'ea', true),
-  ('7610594000021', 'Havana Club 7yr 700ml',             33.00, 'Rum',         23.00,  7, 'ea', true),
-  -- Tequila
-  ('7501035010109', 'Jose Cuervo Especial Gold 700ml',   28.00, 'Tequila',     19.00, 13, 'ea', true),
-  ('7500462476014', 'Patron Silver 700ml',               68.00, 'Tequila',     52.00,  5, 'ea', true),
-  ('7501083530010', 'Olmeca Blanco 700ml',               24.00, 'Tequila',     16.00,  4, 'ea', true),
-  -- Brandy / Cognac
-  ('3049197001504', 'Hennessy VS 700ml',                 62.00, 'Brandy',      47.00,  8, 'ea', true),
-  ('3049195100108', 'Martell VS 700ml',                  55.00, 'Brandy',      41.00,  6, 'ea', true),
-  ('8410261000015', 'Torres 10 Brandy 700ml',            26.00, 'Brandy',      17.50, 11, 'ea', true),
-  -- Arak
-  ('5281000010012', 'Arak Touma 750ml',                  23.00, 'Arak',        15.00, 20, 'ea', true),
-  ('5281000020011', 'Arak Massaya 750ml',                29.00, 'Arak',        20.00, 12, 'ea', true),
-  ('6251000030014', 'Arak Haddad 750ml',                 18.00, 'Arak',        11.00,  9, 'ea', true),
-  -- Liqueur
-  ('4008300010005', 'Jägermeister 700ml',                27.00, 'Liqueur',     18.50, 17, 'ea', true),
-  ('5011013100019', 'Baileys Irish Cream 700ml',         24.00, 'Liqueur',     16.00, 21, 'ea', true),
-  ('8000040011006', 'Campari 700ml',                     26.00, 'Liqueur',     18.00,  8, 'ea', true),
-  ('9002859031007', 'Aperol 700ml',                      23.00, 'Liqueur',     15.50, 10, 'ea', true),
-  -- Wine
-  ('3282111008019', 'Bordeaux Rouge AOC 750ml',          18.00, 'Wine',        11.00, 30, 'ea', true),
-  ('8410415510017', 'Rioja Crianza 750ml',               21.00, 'Wine',        13.50, 24, 'ea', true),
-  ('5281002010013', 'Ksara Reserve du Couvent 750ml',    19.00, 'Wine',        12.00, 26, 'ea', true),
-  ('9300727001009', 'Yellow Tail Shiraz 750ml',          15.00, 'Wine',         9.00, 33, 'ea', true),
-  ('3760040170015', 'Provence Rosé 750ml',               22.00, 'Wine',        14.00,  6, 'ea', true),
-  -- Champagne / Sparkling
-  ('3049614088001', 'Moët & Chandon Impérial 750ml',     72.00, 'Champagne',   55.00,  6, 'ea', true),
-  ('3049614160004', 'Veuve Clicquot Brut 750ml',         85.00, 'Champagne',   66.00,  3, 'ea', true),
-  ('8003625000018', 'Prosecco DOC Extra Dry 750ml',      17.00, 'Champagne',   10.50, 18, 'ea', true),
-  -- Beer
-  ('8712000030001', 'Heineken 330ml can',                 1.60, 'Beer',         1.00,240, 'ea', true),
-  ('5410228142805', 'Stella Artois 330ml bottle',         1.80, 'Beer',         1.15,180, 'ea', true),
-  ('4006020010009', 'Corona Extra 355ml bottle',          2.10, 'Beer',         1.35,144, 'ea', true),
-  ('5411681005010', 'Amstel 500ml can',                   2.00, 'Beer',         1.25, 96, 'ea', true),
-  ('6251010050017', 'Petra Lager 500ml can',              1.50, 'Beer',         0.90,120, 'ea', true),
-  ('5010134510019', 'Guinness Draught 440ml can',         3.20, 'Beer',         2.10, 48, 'ea', true),
-  -- Mixers
-  ('5449000000996', 'Coca-Cola 1L',                       1.10, 'Mixers',       0.65, 60, 'ea', true),
-  ('5449000011527', 'Sprite 1L',                          1.10, 'Mixers',       0.65, 48, 'ea', true),
-  ('5000112611854', 'Schweppes Tonic Water 1L',           1.60, 'Mixers',       0.95, 54, 'ea', true),
-  ('5000112630015', 'Schweppes Soda Water 1L',            1.50, 'Mixers',       0.90, 40, 'ea', true),
-  ('6281000010015', 'Ice Cubes 2kg bag',                  1.00, 'Mixers',       0.45, 35, 'ea', true),
-  ('5449000131805', 'Red Bull 250ml can',                 1.40, 'Mixers',       0.90, 72, 'ea', true),
-  -- Accessories
-  ('6251020010012', 'Corkscrew — waiter''s friend',       4.50, 'Accessories',  2.20, 15, 'ea', true),
-  ('6251020020011', 'Wine Gift Box (single)',             3.00, 'Accessories',  1.30, 40, 'ea', true),
-  ('6251020030010', 'Whiskey Glass — set of 2',           9.00, 'Accessories',  5.00, 12, 'ea', true),
-  ('6251020040019', 'Bottle Opener',                      1.50, 'Accessories',  0.60, 50, 'ea', true)
+-- sku | name | price (JOD, tax-inclusive) | cat | cost | stock | low_at | unit
+insert into products (barcode, name, price, cat, cost, stock, low_at, unit, active) values
+  -- Hot Coffee
+  ('KC-HC-01', 'Espresso',            2.00, 'Hot Coffee',  0, 9999, 0, 'ea', true),
+  ('KC-HC-02', 'Espresso Macchiato',  2.25, 'Hot Coffee',  0, 9999, 0, 'ea', true),
+  ('KC-HC-03', 'Lungo',               2.00, 'Hot Coffee',  0, 9999, 0, 'ea', true),
+  ('KC-HC-04', 'Americano',           2.50, 'Hot Coffee',  0, 9999, 0, 'ea', true),
+  ('KC-HC-05', 'V60 / Chemex',        3.75, 'Hot Coffee',  0, 9999, 0, 'ea', true),
+  ('KC-HC-06', 'Cappuccino',          3.25, 'Hot Coffee',  0, 9999, 0, 'ea', true),
+  ('KC-HC-07', 'Cafe Latte',          3.25, 'Hot Coffee',  0, 9999, 0, 'ea', true),
+  ('KC-HC-08', 'Flat White',          3.25, 'Hot Coffee',  0, 9999, 0, 'ea', true),
+  ('KC-HC-09', 'White / Dark Mocha',  3.75, 'Hot Coffee',  0, 9999, 0, 'ea', true),
+  ('KC-HC-10', 'Spanish Latte',       3.75, 'Hot Coffee',  0, 9999, 0, 'ea', true),
+  ('KC-HC-11', 'Caramel Macchiato',   3.75, 'Hot Coffee',  0, 9999, 0, 'ea', true),
+  ('KC-HC-12', 'Cortado',             3.00, 'Hot Coffee',  0, 9999, 0, 'ea', true),
+  ('KC-HC-13', 'Turkish',             2.25, 'Hot Coffee',  0, 9999, 0, 'ea', true),
+  -- Cold Coffee
+  ('KC-CC-01', 'Iced Latte',          3.25, 'Cold Coffee', 0, 9999, 0, 'ea', true),
+  ('KC-CC-02', 'Cold Brew',           3.75, 'Cold Coffee', 0, 9999, 0, 'ea', true),
+  -- The one genuinely stocked line on the menu: a bottle that sits in a fridge and can
+  -- actually run out. Real count, real reorder point, so the "Out"/"left" pills mean
+  -- something on this tile and only this tile.
+  ('KC-CC-03', 'Cold Brew Bottle',    4.75, 'Cold Coffee', 0,   24, 6, 'ea', true),
+  ('KC-CC-04', 'Iced Americano',      2.75, 'Cold Coffee', 0, 9999, 0, 'ea', true),
+  ('KC-CC-05', 'Dark / White Mocha',  4.00, 'Cold Coffee', 0, 9999, 0, 'ea', true),
+  ('KC-CC-06', 'Spanish Latte',       4.00, 'Cold Coffee', 0, 9999, 0, 'ea', true),
+  ('KC-CC-07', 'Caramel Macchiato',   4.00, 'Cold Coffee', 0, 9999, 0, 'ea', true),
+  ('KC-CC-08', 'Frappuccino',         4.75, 'Cold Coffee', 0, 9999, 0, 'ea', true),
+  -- Tea & Herbs
+  -- Chai Karak is deliberately absent: it renders greyed out on Kan's published menu
+  -- and the owner confirmed it is not being sold.
+  ('KC-TH-01', 'Black / Green',       2.25, 'Tea & Herbs', 0, 9999, 0, 'ea', true),
+  ('KC-TH-02', 'Persian Tea',         3.00, 'Tea & Herbs', 0, 9999, 0, 'ea', true),
+  ('KC-TH-03', 'Beduin Tea',          3.00, 'Tea & Herbs', 0, 9999, 0, 'ea', true),
+  ('KC-TH-04', 'Chai Latte',          3.25, 'Tea & Herbs', 0, 9999, 0, 'ea', true),
+  ('KC-TH-05', 'Yemeni Tea',          3.25, 'Tea & Herbs', 0, 9999, 0, 'ea', true),
+  ('KC-TH-06', 'Moroccan Tea',        2.50, 'Tea & Herbs', 0, 9999, 0, 'ea', true),
+  ('KC-TH-07', 'Ask About Herbs',     2.75, 'Tea & Herbs', 0, 9999, 0, 'ea', true),
+  -- Hot Kan
+  ('KC-HK-01', 'Hot Chocolate',       3.50, 'Hot Kan',     0, 9999, 0, 'ea', true),
+  ('KC-HK-02', 'Hot Lotus',           3.75, 'Hot Kan',     0, 9999, 0, 'ea', true),
+  ('KC-HK-03', 'Hot Pistachio',       3.75, 'Hot Kan',     0, 9999, 0, 'ea', true),
+  -- Cold Kan
+  ('KC-CK-01', 'Mojito',              3.50, 'Cold Kan',    0, 9999, 0, 'ea', true),
+  ('KC-CK-02', 'Iced Tea',            3.00, 'Cold Kan',    0, 9999, 0, 'ea', true),
+  ('KC-CK-03', 'Smoothies',           4.00, 'Cold Kan',    0, 9999, 0, 'ea', true),
+  ('KC-CK-04', 'Fresh Juice',         3.25, 'Cold Kan',    0, 9999, 0, 'ea', true),
+  ('KC-CK-05', 'Matcha',              4.00, 'Cold Kan',    0, 9999, 0, 'ea', true),
+  ('KC-CK-06', 'Summer Passion',      4.00, 'Cold Kan',    0, 9999, 0, 'ea', true),
+  -- Special
+  ('KC-SP-01', 'Hot Arabian Latte',   4.00, 'Special',     0, 9999, 0, 'ea', true),
+  ('KC-SP-02', 'Hot Spanilla',        4.00, 'Special',     0, 9999, 0, 'ea', true),
+  ('KC-SP-03', 'Iced Arabian Latte',  4.25, 'Special',     0, 9999, 0, 'ea', true),
+  ('KC-SP-04', 'Iced Spanilla',       4.25, 'Special',     0, 9999, 0, 'ea', true),
+  ('KC-SP-05', 'Pomberries Smoothie', 4.25, 'Special',     0, 9999, 0, 'ea', true),
+  ('KC-SP-06', 'Matcha (Strawberry-Mango)', 4.25, 'Special', 0, 9999, 0, 'ea', true),
+  ('KC-SP-07', 'Affogato',            4.25, 'Special',     0, 9999, 0, 'ea', true)
 on conflict (barcode) do update set
   name  = excluded.name,
   price = excluded.price,
   cat   = excluded.cat,
   cost  = excluded.cost,
-  stock = excluded.stock,
+  -- stock is NOT overwritten on re-run. Re-seeding to fix a price must not silently
+  -- reset a real count (Cold Brew Bottle) or wipe the drift on the made-to-order lines
+  -- — that would be an unattributable inventory change with no stock_log row.
+  low_at = excluded.low_at,
   unit  = excluded.unit,
   active = excluded.active,
   updated_at = now();

@@ -1,25 +1,29 @@
-# Local Postgres for the Liquor Store POS demo.
-#   docker compose up -d          → starts db on localhost:5433
+# Local Postgres for Kan Coffee House.
+#   docker compose up -d          → starts db on localhost:5435
 #   docker compose down -v        → wipes it
-# Port 5433 (not 5432) so it never collides with a Postgres already installed on the host.
+#
+# Port 5435, and every name distinct from the liquor-store fork, because both run on the
+# same developer machine: 5432 is a host Postgres, 5433 is clinicos-db, 5434 is the liquor
+# shop. A shared container name or volume would have one shop silently reading the other's
+# database.
 services:
   db:
     image: postgres:16-alpine
-    container_name: liquor-pos-db
+    container_name: kan-pos-db
     restart: unless-stopped
     environment:
       POSTGRES_USER: pos
       POSTGRES_PASSWORD: pos
-      POSTGRES_DB: liquorpos
+      POSTGRES_DB: kanpos
     ports:
-      - "5433:5432"
+      - "5435:5432"
     volumes:
-      - liquor_pos_data:/var/lib/postgresql/data
+      - kan_pos_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U pos -d liquorpos"]
+      test: ["CMD-SHELL", "pg_isready -U pos -d kanpos"]
       interval: 5s
       timeout: 5s
       retries: 20
 
 volumes:
-  liquor_pos_data:
+  kan_pos_data:

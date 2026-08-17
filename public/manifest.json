@@ -1,8 +1,8 @@
 {
   "id": "/",
-  "name": "Liquor Store POS",
-  "short_name": "Liquor",
-  "description": "Liquor Store point-of-sale terminal",
+  "name": "Kan Coffee House POS",
+  "short_name": "Kan",
+  "description": "Kan Coffee House point-of-sale terminal",
   "start_url": ".",
   "scope": ".",
   "display": "standalone",

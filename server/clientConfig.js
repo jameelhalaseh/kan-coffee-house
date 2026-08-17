@@ -79,7 +79,7 @@ function clientConfig() {
     : KNOWN_VIEWS.filter((v) => v !== 'assistant');
 
   return {
-    storeName: str('CLIENT_STORE_NAME', 'Liquor Store'),
+    storeName: str('CLIENT_STORE_NAME', 'Kan Coffee House'),
     currency: str('CLIENT_CURRENCY', 'JOD'),
     locale: { default: lang('CLIENT_LANG', 'en') },
     store: {
@@ -97,13 +97,19 @@ function clientConfig() {
       timezone: str('STORE_TZ', 'Asia/Amman'),
     },
     bill: {
-      footerThanks: str('CLIENT_BILL_FOOTER', 'Please drink responsibly. Thank you!'),
-      footerThanksAr: str('CLIENT_BILL_FOOTER_AR', 'نرجو الشرب بمسؤولية. شكراً لكم'),
-      invoicePrefix: str('CLIENT_INVOICE_PREFIX', 'LQ'),
+      footerThanks: str('CLIENT_BILL_FOOTER', 'See you again soon!'),
+      footerThanksAr: str('CLIENT_BILL_FOOTER_AR', 'نراكم قريباً'),
+      invoicePrefix: str('CLIENT_INVOICE_PREFIX', 'KC'),
       seller: {
-        name: str('CLIENT_SELLER_NAME', str('CLIENT_STORE_NAME', 'Liquor Store')),
+        name: str('CLIENT_SELLER_NAME', str('CLIENT_STORE_NAME', 'Kan Coffee House')),
         location: str('CLIENT_SELLER_LOCATION', 'Amman, Jordan'),
-        taxNo: str('CLIENT_SELLER_TAX_NO', '1234567'),
+        // EMPTY FALLBACK, CHANGED FROM THE TEMPLATE'S '1234567'.
+        // A placeholder tax number is worse than none: it prints on every receipt the
+        // shop issues, it looks like a real registration, and nothing in the app flags
+        // it. Empty renders no tax line at all — visibly incomplete, which is the
+        // correct signal while Kan's real number is still outstanding.
+        // Set CLIENT_SELLER_TAX_NO before Kan issues a single real receipt.
+        taxNo: str('CLIENT_SELLER_TAX_NO', ''),
       },
       // Left empty unless the shop asserts it. This line states which regulation the
       // business invoices under — the owner's claim to make, not ours to fill in.

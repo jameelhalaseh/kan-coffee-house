@@ -1,10 +1,10 @@
 // ──────────────────────────────────────────────────────────────────────────
 // CLIENT CONFIG — single source of truth for everything client-specific.
 //
-// Liquor Store build: a single-store, barcode-driven retail POS. There are no
-// floors/tables — the app is a catalogue + scan-to-cart sales screen. The store key is
-// fixed to "main" (mirrors server/floors.js); it names the orders_main table and is the
-// invoice-numbering key.
+// Kan Coffee House build: a single-store, counter-service cafe POS. There are no
+// floors/tables and no barcode scanner — the app is a catalogue + category-chip sales
+// screen. The store key is fixed to "main" (mirrors server/floors.js); it names the
+// orders_main table and is the invoice-numbering key.
 //
 // WHERE THE VALUES COME FROM
 // The literals below are DEFAULTS, not the answer. The API serves this shop's real identity
@@ -18,11 +18,12 @@
 // ──────────────────────────────────────────────────────────────────────────
 
 const DEFAULTS = {
-  storeName: "Liquor Store",
+  storeName: "Kan Coffee House",
   currency: "JOD",
   // English by default; the AR⇄EN toggle in Settings still works at runtime.
   locale: { default: "en", arabic: false },
-  // Single store. Alcohol is taxable here → 16% VAT on the receipt.
+  // Single store. Standard Jordanian sales tax → 16% VAT on the receipt.
+  // Menu prices are TAX-INCLUSIVE (Espresso 2.00 = 1.72 net + 0.28 VAT).
   //
   // `timezone` is the shop's own clock, and it decides which trading day a sale belongs to.
   // The server sends its own STORE_TZ down in window.__CLIENT__ rather than this being set
@@ -31,11 +32,17 @@ const DEFAULTS = {
   // value is only what a server-less build (demo, tests) falls back to.
   store: { key: "main", taxPct: 16, timezone: "Asia/Amman" },
   bill: {
-    footerThanks: "Please drink responsibly. Thank you!",
-    footerThanksAr: "نرجو الشرب بمسؤولية. شكراً لكم",
-    invoicePrefix: "LQ",
+    footerThanks: "See you again soon!",
+    footerThanksAr: "نراكم قريباً",
+    invoicePrefix: "KC",
     // Seller identity printed on the receipt header.
-    seller: { name: "Liquor Store", location: "Amman, Jordan", taxNo: "1234567" },
+    //
+    // taxNo IS DELIBERATELY EMPTY. The owner had not supplied Kan's registered tax number
+    // at intake, and the template's old "1234567" placeholder must never reach a real
+    // receipt — a wrong tax number prints on every invoice the shop ever issues and
+    // nothing in the app would say so. Set CLIENT_SELLER_TAX_NO in the shop's env before
+    // Kan issues a single real receipt. See CLIENT_INTAKE.md, open blocker #1.
+    seller: { name: "Kan Coffee House", location: "Amman, Jordan", taxNo: "" },
     // Optional legal line at the foot of the bill, e.g. the Jordanian invoicing-regulation
     // declaration ("صدرت هذه الفاتورة وفق أحكام المادة 5 من نظام تنظيم شؤون الفوترة").
     //
@@ -84,7 +91,7 @@ if (typeof document !== "undefined") document.title = `${STORE_NAME} POS`;
 // ── Language (runtime toggle, persisted) ──────────────────────────────────────
 // Default from config; user can switch AR⇄EN at runtime. Every UI string is an
 // `ARABIC ? ar : en` ternary, so flipping this + reloading re-renders the whole app.
-const LANG_KEY = "liquor_store_lang";
+const LANG_KEY = "kan_coffee_lang";
 const defaultLang = CLIENT.locale.arabic ? "ar" : (CLIENT.locale.default || "en");
 let _lang = defaultLang;
 try { _lang = localStorage.getItem(LANG_KEY) || defaultLang; } catch (_) {}
