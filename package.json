@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "homepage": ".",
+  "//dev-proxy": "The dev-server proxy lives in src/setupProxy.js, NOT in a `proxy` field here. The shorthand loses to CRA's historyApiFallback (disableDotRule: true) for /client-config.js — see the comment at the top of that file. Do not re-add a `proxy` key; it would be redundant and would reintroduce the ambiguity.",
   "engines": {
     "node": ">=18"
   },
