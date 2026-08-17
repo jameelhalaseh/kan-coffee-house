@@ -44,7 +44,10 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          # Must match ci.yml — and the npm major that generated package-lock.json.
+          # See the note in ci.yml: npm 10 rejects this lock with
+          # "Missing: yaml@2.9.0 from lock file".
+          node-version: '24'
           cache: npm
 
       - run: npm ci

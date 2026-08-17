@@ -47,7 +47,13 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          # 24, not 20, so CI's npm major matches the one that generated package-lock.json.
+          # On Node 20 (npm 10) `npm ci` failed with "Missing: yaml@2.9.0 from lock file":
+          # npm 11 dedupes yaml to a single hoisted 1.10.3, npm 10 wants a nested 2.9.0, and
+          # a lock written by one is not installable by the other. Locally `npm ci --dry-run`
+          # passed, which is exactly how this skew hides until CI runs.
+          # Keep this in step with whatever npm regenerates the lock.
+          node-version: '24'
           cache: npm
 
       # `npm ci` needs the lockfile to match package.json — that check is itself useful.
