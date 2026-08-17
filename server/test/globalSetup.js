@@ -4,16 +4,18 @@
 // unique constraints and row locks, and a mocked `pg` would assert nothing about any of
 // them. What is mocked away instead is the *demo data*: tests get their own database
 // (liquorpos_test by default), created and migrated from scratch here, so a test run can
-// never touch the catalogue or sales the demo is showing.
+// never touch the catalogue or sales the shop is showing.
 //
-// Point TEST_DATABASE_URL at any Postgres to run this elsewhere (CI). Default is the
-// local demo container from docker-compose.yml (`npm run db:up`).
+// Point TEST_DATABASE_URL at any Postgres to run this elsewhere (CI). Default is this
+// fork's local container from docker-compose.yml (`npm run db:up`) — 5435/kanpos, NOT the
+// inherited 5433, which on a machine hosting several of these shops is another project's
+// database entirely.
 const { Client } = require('pg');
 const { execFileSync } = require('child_process');
 const path = require('path');
 
 const TEST_URL = process.env.TEST_DATABASE_URL
-  || 'postgres://pos:pos@localhost:5433/liquorpos_test';
+  || 'postgres://pos:pos@localhost:5435/kanpos_test';
 
 module.exports = async () => {
   const url = new URL(TEST_URL);

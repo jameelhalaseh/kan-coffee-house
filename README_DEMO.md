@@ -1,138 +1,115 @@
-# Liquor Store POS — local demo
+# Kan Coffee House POS — running it locally
 
-A per-client clone of the Dukkan retail POS: single store, barcode scan-to-cart, 16% VAT,
-Arabic⇄English, dark-amber UI. Runs entirely on your machine against a Docker Postgres.
+A counter-service cafe till, forked from the Dukkan/Liquor retail POS: single store, 16% VAT
+(tax-inclusive prices), Arabic⇄English, dark-amber UI. **No barcode scanner** — drinks are
+rung from category chips. Runs entirely on your machine against a Docker Postgres.
+
+## Ports on this machine
+
+This fork deliberately avoids the template's documented ports, because several of these shops
+run side by side here. Changing them back will collide.
+
+| | Kan | Why not the default |
+|---|---|---|
+| App | **3003** | 3001 is WeRespond-UI, 3002 is the liquor-store fork |
+| Postgres | **5435** | 5432 is a host Postgres, 5433 is `clinicos-db`, 5434 is the liquor fork |
+| CRA dev server | **3004** | 3000 is in use |
 
 ## Run it
 
 ```bash
-cd "C:\Users\basel\liqure store"
+cd "C:\Users\user\OneDrive - RM Network\Dev\7uloultech\kan-coffee-house"
 npm install                 # once
-npm run db:up               # Postgres 16 in Docker on localhost:5433
-npm run demo:setup          # migrate + admin + staff + catalogue + 14 days of sales
+npm run db:up               # Postgres 16 in Docker on localhost:5435
+npm run setup               # migrate + seed Kan's 44-drink menu
 npm run build               # production React bundle
-npm run server              # http://localhost:3001
+npm run server              # http://localhost:3003
 ```
 
-Open <http://localhost:3001>.
+Open <http://localhost:3003>.
 
-For frontend hot-reload during development, run `npm run server` in one terminal and
-`npm start` (CRA dev server, port 3000) in another — CRA proxies nothing, so set
-`REACT_APP_API_URL=http://localhost:3001` in `.env` first.
+`npm run setup` does **not** create logins — passwords are never written to a file. Seed them
+by passing them on the command line (see the bottom of `.env`), then log in as `owner`.
 
-## Demo logins
-
-| User      | Password      | Role  | Sees                                                  |
-|-----------|---------------|-------|-------------------------------------------------------|
-| `owner`   | `liquor1234`  | admin | everything, including the AI assistant                |
-| `manager` | `manager1234` | user  | sales, inventory, receive, history, reports, settings |
-| `cashier` | `cashier1234` | user  | sales, history only — reports/timeclock return 403    |
-
-Demo credentials only. They live in `.env` (gitignored) and were applied by `seed:admin` /
-`seed:users`. Change them before showing this to anyone outside the room.
-
-## Barcode scanning
-
-A USB scanner is a keyboard wedge: it types the digits fast and presses Enter. The Sales
-screen listens for that burst globally — no need to focus the search box.
-
-1. Known barcode → line added to the cart, one short high beep.
-2. Unknown barcode → two low buzzes + the quick-add product modal, prefilled with the code.
-
-No scanner? Type the barcode into the search field and press Enter — identical path.
-Codes to try:
-
-| Barcode         | Product                           | Price   |
-|-----------------|-----------------------------------|---------|
-| `5000267023656` | Johnnie Walker Black Label 750ml  | 38.00   |
-| `5452000032102` | Absolut Vodka 700ml               | 22.00   |
-| `8712000030001` | Heineken 330ml can                | 1.60    |
-| `3049614088001` | Moët & Chandon Impérial 750ml     | 72.00   |
-| `5281000010012` | Arak Touma 750ml                  | 23.00   |
-| `9999999999999` | (nothing — triggers quick-add)    | —       |
-
-## Loading a real catalogue (CSV import)
-
-The demo catalogue is seeded SQL, but a client can load their own without touching the
-repo. Inventory → **⬆ Import CSV** (admin only — the import rewrites prices across the
-whole catalogue, so it is gated exactly like every other pricing path).
-
-Columns: `barcode, name, price, cost, stock, cat, unit, active`. Only `name` is required,
-and common spreadsheet header spellings are accepted (`SKU`, `Product Name`, `Qty`,
-`Department`…). The modal has a **Download template** link.
-
-The file is parsed and checked in the browser first, so bad rows are listed with their
-line numbers before anything is written; the valid rows can still be imported. Rows whose
-barcode already exists either update that product or reject the whole file, your choice.
-The import runs as ONE transaction — a failure part-way through leaves the catalogue
-untouched — and every product created or repriced gets a `stock_log` row naming the admin
-who did it.
+For frontend hot reload, run `npm run server` in one terminal and `npm start` in another with
+`PORT=3004`. `src/setupProxy.js` forwards `/client-config.js`, `/api`, `/healthz` and `/brand`
+to the API, so no `REACT_APP_API_URL` and no CORS entry are needed — and do **not** replace it
+with a `"proxy"` field in package.json; that loses to CRA's historyApiFallback for
+`/client-config.js` and the app silently reverts to compiled defaults.
 
 ## What's seeded
 
-- **57 products** across Whiskey, Vodka, Gin, Rum, Tequila, Brandy, Arak, Liqueur, Wine,
-  Beer, Champagne, Mixers, Accessories. Several are deliberately below the low-stock
-  threshold (Belvedere, Jameson, Veuve Clicquot…) so alerts and AI insights have signal.
-- **4 suppliers** for the Receive flow.
-- **~135 sales over 14 days** (Thu/Fri busier) so History, Reports and the Z-report look real.
+**44 products** from Kan's published drinks menu, in six categories matching the printed menu
+order: Hot Coffee (13) · Cold Coffee (8) · Tea & Herbs (7) · Hot Kan (3) · Cold Kan (6) ·
+Special (7). Prices are tax-inclusive JOD.
 
-Reseed anytime: `npm run seed:products`, `npm run seed:sales` (idempotent),
-`DEMO_DAYS=30 npm run seed:sales` for a longer window.
-Wipe sales but keep catalogue + users: `CONFIRM_WIPE=YES npm run reset:data`.
-Nuke everything: `npm run db:reset` then `npm run demo:setup`.
+Three things about the catalogue are deliberate and documented in `server/seed-products.sql`:
 
-## Verified working
+- **`barcode` holds synthetic internal SKUs** (`KC-HC-01`…). Kan has no scanner, but `barcode`
+  is the UNIQUE column the seed upserts on, and Postgres NULL never conflicts with NULL — so
+  empty barcodes would insert 44 fresh rows on every run.
+- **Made-to-order drinks carry `stock = 9999`, `low_at = 0`.** Checkout deducts stock per line
+  and there is no non-stock-item flag; seeding 0 would paint a permanent red "Out" pill on
+  every tile. The count drifts down as drinks sell and needs an occasional reset in Inventory.
+  `Cold Brew Bottle` is the one genuinely stocked line (`stock 24`, `low_at 6`).
+- **`cost = 0` everywhere**, because Kan supplied no costs. Financials/P&L therefore reads
+  100% margin — an honest gap, not a figure. Load costs before showing the owner that tab.
 
-Checked end-to-end against the local database:
+**No suppliers and no demo sales are seeded.** Inventing vendor records or fabricated revenue
+for a real client corrupts every report the owner looks at. Receive is unusable until Kan adds
+a real supplier. (`seed:demo-sales-DESTRUCTIVE` exists but is deliberately out of `setup`.)
 
-- login + Bearer session for all three users
-- barcode lookup (`/api/products/barcode/:code`) and full catalogue load
-- checkout: order written to `orders_main`, stock deducted, `stock_log` rows appended —
-  all in one transaction; invoice numbering (`app_next_invoice`) hands out 1, 2, 3…
-- 16% VAT applied on the receipt totals
-- receive stock: batch recorded against a supplier, product stock increased
-- reports: summary, top products, low stock
-- time clock in/out
-- permissions: `cashier` gets 403 on `/api/timeclock`, `/api/ai/insights`,
-  `/api/reports/*` and `/api/products/import`; no token → 401
-- AI assistant insights (deterministic path — chat needs `NVIDIA_API_KEY`)
-- `CI=true npm run build` compiles clean
-- CSV import: upsert on barcode, per-row validation, all-or-nothing rollback, audit rows
+Reseed prices any time with `npm run seed:products` — it is idempotent and deliberately does
+**not** reset `stock`, so a real count is never silently overwritten.
 
 ## Tests
 
 ```bash
-npm test              # frontend (jsdom): pure helpers + CSV parsing — 46 tests
-npm run test:server   # API against Postgres: 333 tests, needs `npm run db:up`
-npm run test:all      # both
-npm run test:server:coverage
+npx react-scripts test --watchAll=false   # frontend (jsdom): 142 tests
+npm run test:server                      # API against Postgres: 459 tests, needs `npm run db:up`
+npm run test:all                         # both
 ```
 
-`test:server` creates and migrates its own throwaway database (`liquorpos_test`) on every
-run, so it never touches the demo data. Point `TEST_DATABASE_URL` elsewhere for CI.
+There is no `npm test` script — the template's docs claimed one, but it was never defined.
 
-Server coverage is 80% of statements (89% across the route modules). The gaps are
-`email.js` (EmailJS forgot-password) and the `migrate`/`reset-data` CLI scripts.
+`test:server` creates and migrates its own throwaway database (`kanpos_test`) on every run, so
+it never touches the shop's data. Its default now points at **5435**; the inherited default was
+5433, which on this machine is another project's Postgres and failed with a misleading
+"password authentication failed for user pos".
+
+## The public demo (GitHub Pages)
+
+`.github/workflows/pages.yml` publishes a **mock** build — `REACT_APP_DEMO=1` swaps the real
+API for `src/demoApi.js`, an in-browser stand-in backed by localStorage.
+
+⚠ **It is not a till.** No server, no database. **Any password logs in** (`owner`, `manager`,
+`barista1`). Nothing persists past the visitor's own browser. Never point a demo build at a
+real API. Receipts it prints are cosmetic — the real shop still has no registered tax number.
+
+The demo catalogue in `demoApi.js` must stay Kan's menu. It previously seeded groceries
+(Laban, Pita Bread, Dish Soap) inherited from the Dukkan ancestor, which under Kan's name
+reads as the wrong shop's till.
 
 ## Config
 
-Everything client-specific is in **`src/client.config.js`** (store name, currency, 16% VAT,
-seller identity for the receipt header, `LQ` invoice prefix, language, nav views) plus
-**`server/floors.js`** (`FLOORS = ['main']` → the `orders_main` table). Those two must
-agree. Nothing else is per-client — do not edit `App.jsx` to change branding.
+Everything client-specific is environment, read at boot by `server/clientConfig.js` and served
+to the browser as `GET /client-config.js` → `window.__CLIENT__`. See `.env`.
 
-The design system lives in `src/theme.js` and is shared across every client build. Only
-`C.accent` should ever change per client.
+The literals in `src/client.config.js` are only the **fallback** for when no server answers
+(the Pages demo, the jsdom tests). They hold Kan's identity, and `DEFAULT_VIEWS` there is
+load-bearing: it omits `assistant` so the AI button the owner switched off cannot reappear in
+the demo build.
 
-## Optional bits
+`server/floors.js` (`FLOORS = ['main']` → the `orders_main` table) must agree with
+`src/client.config.js`'s store key. The design system lives in `src/theme.js` and is shared
+across every client build — do not fork it per shop.
 
-- **AI chat** — set `NVIDIA_API_KEY` in `.env` (free tier at build.nvidia.com) and restart.
-  Insights/alerts work without it.
-- **Thermal printing** — ESC/POS over Web Serial (`src/lib/thermalPrinter.js`), Chrome/Edge
-  only, plus cash-drawer kick. Paperless checkout works with no printer.
-- **Forgot password** — needs the four `EMAILJS_*` server vars; without them that endpoint
-  returns 503 and normal login is unaffected.
+## Outstanding
+
+See `CLIENT_INTAKE.md` for the agreed spec and the full blocker list. The two that stop Kan
+going live: **no registered tax number** (so no real receipts) and **no JoFotara credentials**.
 
 ## Deploy
 
-See `DEPLOY_HEROKU.md`.
+`DEPLOY_HEROKU.md` or `DEPLOY_VPS.md`. Note the thermal printer needs a secure context, so a
+real host must be HTTPS — `localhost` counts as secure, which is why printing works locally.

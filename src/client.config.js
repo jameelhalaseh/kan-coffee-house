@@ -154,9 +154,19 @@ export const isSettledPayment = (key) => {
 // pins the server's KNOWN_VIEWS to this list by reading this file as text, the same way
 // reporting/test/payments.test.js pins the payment methods.
 export const ALL_VIEWS = ["sales", "inventory", "receive", "history", "reports", "storereports", "assistant", "settings"];
+
+// What Kan sees when the server has NOT told us (no window.__CLIENT__): the demo build on
+// GitHub Pages, and the jsdom tests.
+//
+// This used to fall back to ALL_VIEWS, which quietly re-enabled the AI Assistant this shop
+// switched off — the nav offered a button opening a view that can only apologise, in the very
+// build a client is shown. `assistant` is omitted here for the same reason it is omitted from
+// CLIENT_VIEWS in .env. A live deployment still overrides this with its own env.
+const DEFAULT_VIEWS = ["sales", "inventory", "receive", "history", "reports", "storereports", "settings"];
+
 export const VIEWS = Array.isArray(RUNTIME.views) && RUNTIME.views.length
   ? ALL_VIEWS.filter((v) => RUNTIME.views.includes(v))
-  : ALL_VIEWS;
+  : ALL_VIEWS.filter((v) => DEFAULT_VIEWS.includes(v));
 export const VIEW_LABELS = {
   sales: ARABIC ? "البيع" : "Sales",
   inventory: ARABIC ? "المخزون" : "Inventory",

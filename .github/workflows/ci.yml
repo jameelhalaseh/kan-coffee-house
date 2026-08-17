@@ -19,9 +19,11 @@ jobs:
         env:
           POSTGRES_USER: pos
           POSTGRES_PASSWORD: pos
-          POSTGRES_DB: liquorpos
+          POSTGRES_DB: kanpos
         ports:
-          - 5433:5432
+          # 5435 to match this fork's docker-compose.yml and the TEST_DATABASE_URL default in
+          # server/test/globalSetup.js, so a CI failure and a local failure mean the same thing.
+          - 5435:5432
         # Don't start the suite against a database still booting.
         options: >-
           --health-cmd "pg_isready -U pos"
@@ -30,8 +32,8 @@ jobs:
           --health-retries 20
 
     env:
-      # globalSetup creates and migrates liquorpos_test on this server per run.
-      TEST_DATABASE_URL: postgres://pos:pos@localhost:5433/liquorpos_test
+      # globalSetup creates and migrates kanpos_test on this server per run.
+      TEST_DATABASE_URL: postgres://pos:pos@localhost:5435/kanpos_test
       DATABASE_SSL: 'false'
       # The shop's trading-day clock. The browser is told this value at runtime
       # (server/clientConfig.js), so it is the single source rather than something that has

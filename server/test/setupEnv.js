@@ -1,8 +1,13 @@
 // Runs in every worker BEFORE any test file (and therefore before server/db.js builds its
 // pool). globalSetup already put the test URL on process.env; this re-asserts it so a
 // stray .env load in a required module can never repoint a test run at the demo database.
+// Default retargeted for this fork: Kan's local Postgres is 5435/kanpos (docker-compose.yml).
+// The inherited default was 5433/liquorpos_test, and on a machine running several of these
+// shops 5433 belongs to a DIFFERENT project's Postgres — the suite failed with "password
+// authentication failed for user pos", which reads like a broken test setup rather than a
+// wrong port. CI overrides this with TEST_DATABASE_URL either way.
 process.env.DATABASE_URL = process.env.TEST_DATABASE_URL
-  || 'postgres://pos:pos@localhost:5433/liquorpos_test';
+  || 'postgres://pos:pos@localhost:5435/kanpos_test';
 process.env.DATABASE_SSL = 'false';
 process.env.NODE_ENV = 'test';
 

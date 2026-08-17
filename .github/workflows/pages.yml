@@ -1,0 +1,94 @@
+# Publishes the DEMO build to GitHub Pages.
+#
+# ── READ THIS BEFORE SENDING ANYONE THE LINK ─────────────────────────────────────
+# What Pages serves is NOT Kan's till. Pages is static hosting: no Node, no Express, no
+# Postgres. This build sets REACT_APP_DEMO=1, which makes src/api.js swap the real REST
+# client for src/demoApi.js — an in-browser mock backed by localStorage.
+#
+# Consequences, all intentional:
+#   * ANY PASSWORD LOGS IN (owner / manager / barista1). There is nothing to protect: no
+#     server, no database, no real money. Never point a demo build at a real API.
+#   * Nothing persists beyond the visitor's own browser. Their sales, their products.
+#   * /client-config.js 404s here (index.html requests it at an absolute path, which on a
+#     Pages subpath does not resolve), so the app runs on the compiled fallbacks in
+#     src/client.config.js. Those hold Kan's identity and DEFAULT_VIEWS, which is why the
+#     AI Assistant stays hidden — it is not an accident, and that constant is load-bearing.
+#   * Receipts printed here are cosmetic. The real shop still has no registered tax number
+#     (CLIENT_INTAKE.md, blocker #1) and must not issue real invoices.
+#
+# The real deployment paths are DEPLOY_HEROKU.md and DEPLOY_VPS.md.
+name: Deploy demo to Pages
+
+on:
+  push:
+    branches: [main]
+  # Deploy on demand without an empty commit.
+  workflow_dispatch:
+
+# A Pages deploy is a publish. One at a time, and never cancel a half-finished one —
+# `cancel-in-progress: false` so an interrupted run cannot leave the site part-updated.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      # The demo is a client-facing artefact. If the helpers or the CSV parser are broken,
+      # do not publish it — a broken demo is worse than yesterday's demo.
+      - name: Frontend tests
+        run: npx react-scripts test --watchAll=false
+        env:
+          CI: 'true'
+
+      - name: Build demo bundle
+        run: npm run build
+        env:
+          # THE flag. Without it this publishes a build that tries to reach an API that is
+          # not there, and every screen sits empty.
+          REACT_APP_DEMO: '1'
+          INLINE_RUNTIME_CHUNK: 'false'
+          # Warnings must not fail a client demo build; the tests above are the real gate.
+          CI: ''
+
+      # Pages serves from /<repo>/, not /. package.json sets "homepage": "." so assets are
+      # referenced relatively and this works without hardcoding the repository name.
+      # SPA deep links: Pages has no rewrite rule, so /history would 404 on refresh.
+      # Serving index.html as 404.html makes GitHub hand the app back instead, and the
+      # client-side router takes it from there.
+      - name: SPA fallback for deep links
+        run: cp build/index.html build/404.html
+
+      - name: Do not let Jekyll eat files beginning with an underscore
+        run: touch build/.nojekyll
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: build
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

@@ -4,39 +4,107 @@
 // contract as the real api.js (get/post/put/patch/del + token helpers), backed by
 // localStorage so data survives reloads. The real Heroku build never imports this.
 //
-// Demo logins (any password):  admin / admin   ·   cashier / cashier
-const LS_KEY = 'dukkan_demo_db';
+// Demo logins — ANY PASSWORD IS ACCEPTED (see the auth branch below):
+//   owner / anything   ·   manager / anything   ·   barista1 / anything
+//
+// That is safe only because this mock never touches Kan's real database: there is no server,
+// no Postgres and no real money in it, and every write lands in this browser's localStorage.
+// It is also why a demo build must never be pointed at a real API.
+//
+// ⚠ THE CATALOGUE BELOW IS KAN'S REAL MENU AND MUST STAY THAT WAY.
+// This file previously seeded a grocery shop (Laban, Pita Bread, Dish Soap) inherited from
+// the Dukkan ancestor. A public demo showing groceries under the Kan Coffee House name is
+// worse than no demo — it reads as the wrong shop's till.
+const LS_KEY = 'kan_demo_db';
 const DEMO_BANNER = true;
+
+// Prices are tax-inclusive JOD, matching server/seed-products.sql. cost is 0 because Kan
+// supplied none, so the demo's profit figures read as 100% margin — the same honest gap the
+// real shop has, not an invented number.
+//
+// stock 9999 / low_at 0 on made-to-order drinks for the same reason as the SQL seed: the
+// till deducts stock per line with no non-stock-item flag, and seeding 0 would paint a red
+// "Out" pill on every tile. Cold Brew Bottle is the one genuinely stocked line.
+const D = (id, sku, name, price, cat) =>
+  ({ id, barcode: sku, name, price, cat, cost: 0, stock: 9999, low_at: 0, unit: 'ea', size: null, active: true });
 
 const seed = () => ({
   products: [
-    { id: 1, barcode: '6281000011002', name: 'Laban 1L', price: 1.250, cat: 'Dairy', cost: 0.9, stock: 24, unit: 'ea', active: true },
-    { id: 2, barcode: '6281000022003', name: 'Pita Bread', price: 0.400, cat: 'Bakery', cost: 0.25, stock: 60, unit: 'ea', active: true },
-    { id: 3, barcode: '5449000000996', name: 'Cola 330ml', price: 0.500, cat: 'Drinks', cost: 0.3, stock: 4, unit: 'ea', active: true },
-    { id: 4, barcode: '6281000033004', name: 'Potato Chips', price: 0.750, cat: 'Snacks', cost: 0.45, stock: 18, unit: 'ea', active: true },
-    { id: 5, barcode: '6281000044005', name: 'Tomatoes (per kg)', price: 0.900, cat: 'Produce', cost: 0.6, stock: 30, unit: 'kg', active: true },
-    { id: 6, barcode: '6281000055006', name: 'Dish Soap', price: 1.100, cat: 'Household', cost: 0.7, stock: 9, unit: 'ea', active: true },
+    // Hot Coffee
+    D(1,  'KC-HC-01', 'Espresso',           2.00, 'Hot Coffee'),
+    D(2,  'KC-HC-02', 'Espresso Macchiato', 2.25, 'Hot Coffee'),
+    D(3,  'KC-HC-03', 'Lungo',              2.00, 'Hot Coffee'),
+    D(4,  'KC-HC-04', 'Americano',          2.50, 'Hot Coffee'),
+    D(5,  'KC-HC-05', 'V60 / Chemex',       3.75, 'Hot Coffee'),
+    D(6,  'KC-HC-06', 'Cappuccino',         3.25, 'Hot Coffee'),
+    D(7,  'KC-HC-07', 'Cafe Latte',         3.25, 'Hot Coffee'),
+    D(8,  'KC-HC-08', 'Flat White',         3.25, 'Hot Coffee'),
+    D(9,  'KC-HC-09', 'White / Dark Mocha', 3.75, 'Hot Coffee'),
+    D(10, 'KC-HC-10', 'Spanish Latte',      3.75, 'Hot Coffee'),
+    D(11, 'KC-HC-11', 'Caramel Macchiato',  3.75, 'Hot Coffee'),
+    D(12, 'KC-HC-12', 'Cortado',            3.00, 'Hot Coffee'),
+    D(13, 'KC-HC-13', 'Turkish',            2.25, 'Hot Coffee'),
+    // Cold Coffee
+    D(14, 'KC-CC-01', 'Iced Latte',         3.25, 'Cold Coffee'),
+    D(15, 'KC-CC-02', 'Cold Brew',          3.75, 'Cold Coffee'),
+    { ...D(16, 'KC-CC-03', 'Cold Brew Bottle', 4.75, 'Cold Coffee'), stock: 24, low_at: 6 },
+    D(17, 'KC-CC-04', 'Iced Americano',     2.75, 'Cold Coffee'),
+    D(18, 'KC-CC-05', 'Dark / White Mocha', 4.00, 'Cold Coffee'),
+    D(19, 'KC-CC-06', 'Spanish Latte',      4.00, 'Cold Coffee'),
+    D(20, 'KC-CC-07', 'Caramel Macchiato',  4.00, 'Cold Coffee'),
+    D(21, 'KC-CC-08', 'Frappuccino',        4.75, 'Cold Coffee'),
+    // Tea & Herbs — Chai Karak omitted: greyed out on Kan's menu, owner confirmed not sold.
+    D(22, 'KC-TH-01', 'Black / Green',      2.25, 'Tea & Herbs'),
+    D(23, 'KC-TH-02', 'Persian Tea',        3.00, 'Tea & Herbs'),
+    D(24, 'KC-TH-03', 'Beduin Tea',         3.00, 'Tea & Herbs'),
+    D(25, 'KC-TH-04', 'Chai Latte',         3.25, 'Tea & Herbs'),
+    D(26, 'KC-TH-05', 'Yemeni Tea',         3.25, 'Tea & Herbs'),
+    D(27, 'KC-TH-06', 'Moroccan Tea',       2.50, 'Tea & Herbs'),
+    D(28, 'KC-TH-07', 'Ask About Herbs',    2.75, 'Tea & Herbs'),
+    // Hot Kan
+    D(29, 'KC-HK-01', 'Hot Chocolate',      3.50, 'Hot Kan'),
+    D(30, 'KC-HK-02', 'Hot Lotus',          3.75, 'Hot Kan'),
+    D(31, 'KC-HK-03', 'Hot Pistachio',      3.75, 'Hot Kan'),
+    // Cold Kan
+    D(32, 'KC-CK-01', 'Mojito',             3.50, 'Cold Kan'),
+    D(33, 'KC-CK-02', 'Iced Tea',           3.00, 'Cold Kan'),
+    D(34, 'KC-CK-03', 'Smoothies',          4.00, 'Cold Kan'),
+    D(35, 'KC-CK-04', 'Fresh Juice',        3.25, 'Cold Kan'),
+    D(36, 'KC-CK-05', 'Matcha',             4.00, 'Cold Kan'),
+    D(37, 'KC-CK-06', 'Summer Passion',     4.00, 'Cold Kan'),
+    // Special
+    D(38, 'KC-SP-01', 'Hot Arabian Latte',  4.00, 'Special'),
+    D(39, 'KC-SP-02', 'Hot Spanilla',       4.00, 'Special'),
+    D(40, 'KC-SP-03', 'Iced Arabian Latte', 4.25, 'Special'),
+    D(41, 'KC-SP-04', 'Iced Spanilla',      4.25, 'Special'),
+    D(42, 'KC-SP-05', 'Pomberries Smoothie', 4.25, 'Special'),
+    D(43, 'KC-SP-06', 'Matcha (Strawberry-Mango)', 4.25, 'Special'),
+    D(44, 'KC-SP-07', 'Affogato',           4.25, 'Special'),
   ],
+  // Named "(demo)" on purpose. Kan's real suppliers are not known, and inventing plausible
+  // vendor names for a business in a PUBLIC demo would read as a real trading relationship.
   suppliers: [
-    { id: 1, name: 'Amman Dairy Co.', phone: '06-555-1234', note: '', active: true },
-    { id: 2, name: 'Fresh Farms', phone: '079-555-9876', note: '', active: true },
+    { id: 1, name: 'Sample Roastery (demo)', phone: '', note: 'Placeholder so Receive can be demonstrated', active: true },
+    { id: 2, name: 'Sample Dairy (demo)', phone: '', note: 'Placeholder so Receive can be demonstrated', active: true },
   ],
   batches: [
-    { id: 1, product_id: 1, supplier_id: 1, qty: 24, cost: 0.9, received_at: new Date().toISOString() },
-    { id: 2, product_id: 5, supplier_id: 2, qty: 30, cost: 0.6, received_at: new Date().toISOString() },
+    { id: 1, product_id: 16, supplier_id: 1, qty: 24, cost: 0, received_at: new Date().toISOString() },
   ],
   nextSupplier: 3,
-  nextBatch: 3,
+  nextBatch: 2,
   orders: [],
+  // Same usernames as the real shop so the demo matches CLIENT_INTAKE.md. Any password works
+  // here; the real accounts have bcrypt hashes and are unrelated to these.
   users: [
-    { id: 'u-admin', username: 'admin', role: 'admin', allowed_views: [], active: true, full_name: 'Store Owner', wage: 0 },
-    { id: 'u-cashier', username: 'cashier', role: 'user', allowed_views: ['inventory', 'history'], active: true, full_name: 'Cashier One', wage: 2.5 },
+    { id: 'u-owner', username: 'owner', role: 'admin', allowed_views: [], active: true, full_name: 'Owner', wage: 0 },
+    { id: 'u-manager', username: 'manager', role: 'user', allowed_views: ['sales', 'inventory', 'receive', 'history', 'reports', 'storereports', 'settings'], active: true, full_name: 'Manager', wage: 0 },
+    { id: 'u-barista1', username: 'barista1', role: 'user', allowed_views: ['sales', 'history'], active: true, full_name: 'Barista One', wage: 0 },
   ],
   time_clock: [],
   nextPunch: 1,
-  categories: ['Drinks', 'Snacks', 'Dairy', 'Produce', 'Bakery', 'Household', 'Frozen', 'Other'],
+  categories: ['Hot Coffee', 'Cold Coffee', 'Tea & Herbs', 'Hot Kan', 'Cold Kan', 'Special'],
   invoice: 0,
-  nextId: 7,
+  nextId: 45,
 });
 
 function load() {

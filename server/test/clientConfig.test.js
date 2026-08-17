@@ -36,16 +36,20 @@ function withEnv(env, fn) {
 }
 
 describe('client config — defaults', () => {
-  test('an unset environment reproduces the Liquor Store build', () => {
-    // The guarantee that makes this refactor safe to deploy: a client stack that sets none
-    // of the new vars behaves exactly as it did when these were literals in the bundle.
+  test('an unset environment reproduces the Kan Coffee House build', () => {
+    // The guarantee that keeps a misconfigured deploy honest: a stack that sets none of the
+    // CLIENT_* vars still identifies as THIS shop, not as the template it was forked from.
     withEnv({ CLIENT_STORE_NAME: undefined }, ({ clientConfig }) => {
       const c = clientConfig();
-      expect(c.storeName).toBe('Liquor Store');
+      expect(c.storeName).toBe('Kan Coffee House');
       expect(c.currency).toBe('JOD');
       expect(c.store.taxPct).toBe(16);
-      expect(c.bill.invoicePrefix).toBe('LQ');
+      expect(c.bill.invoicePrefix).toBe('KC');
       expect(c.bill.legalNote).toBe('');
+      // The point of the fork's change, pinned so nobody "restores" the placeholder: an
+      // unset tax number must be EMPTY, never the template's '1234567'. A fake registration
+      // printed on every receipt is not a default, it is a liability.
+      expect(c.bill.seller.taxNo).toBe('');
     });
   });
 
@@ -65,7 +69,7 @@ describe('client config — defaults', () => {
 
   test('a blank value is treated as unset, not as an empty shop name', () => {
     withEnv({ CLIENT_STORE_NAME: '   ' }, ({ clientConfig }) => {
-      expect(clientConfig().storeName).toBe('Liquor Store');
+      expect(clientConfig().storeName).toBe('Kan Coffee House');
     });
   });
 
