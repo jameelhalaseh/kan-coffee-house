@@ -107,6 +107,27 @@ const seed = () => ({
   nextId: 45,
 });
 
+// Where the bundled artwork lives, and a version string for the ETag-ish field the real API
+// returns. It never changes within a build, which is exactly right: the files are part of the
+// build and cannot change under it.
+const ART_BASE = (process.env.PUBLIC_URL || '') + '/demo-art';
+const DEMO_ART_VERSION = 'demo';
+const artSlug = (s) => String(s).trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+
+// Read once and remember, including the failure: a build without the folder should degrade to
+// letter badges rather than re-requesting a missing file for every tile.
+let _artManifest = null;
+async function demoArtManifest() {
+  if (_artManifest) return _artManifest;
+  try {
+    const res = await fetch(ART_BASE + '/manifest.json');
+    _artManifest = res.ok ? await res.json() : { products: [], categories: [] };
+  } catch (_) {
+    _artManifest = { products: [], categories: [] };
+  }
+  return _artManifest;
+}
+
 function load() {
   try {
     const d = JSON.parse(localStorage.getItem(LS_KEY));
@@ -332,10 +353,22 @@ async function handle(method, path, body) {
     if (method === 'DELETE') { db.users = db.users.filter((x) => x.id !== parts[1]); save(db); return { ok: true }; }
   }
 
-  // The demo has no image store, and an empty manifest is the honest answer: no product has
-  // a picture here. Answered explicitly rather than falling through to the 404 below, so the
-  // demo does not log a rejected request on every load for something that is simply absent.
-  if (top === 'product-images') return [];
+  // ── Bundled artwork ─────────────────────────────────────────────────────────
+  // The demo has no database, so the pictures cannot come from one. They ship inside the
+  // build as public/demo-art/*.png and are answered from here, which means productArt.js and
+  // categoryArt.js need no knowledge of the demo at all: they ask for a manifest and then for
+  // bytes, exactly as they do against the real API, and getBlob below hands them a real Blob.
+  //
+  // Without this the demo showed Kan's menu as bare text with letter badges - the one thing a
+  // client-facing demo is meant to show off was the thing it left out.
+  if (top === 'product-images') {
+    const m = await demoArtManifest();
+    return m.products.map((id) => ({ product_id: id, updated_at: DEMO_ART_VERSION }));
+  }
+  if (top === 'category-images') {
+    const m = await demoArtManifest();
+    return m.categories.map((cat) => ({ cat, updated_at: DEMO_ART_VERSION }));
+  }
 
   err('not_found', 404);
 }
@@ -354,7 +387,28 @@ export const api = {
   // The demo has no server to store uploaded artwork in, so every tile falls back to the
   // bundled image. Rejecting (rather than omitting the method) is what categoryArt.js
   // already treats as "no upload for this category".
-  getBlob: () => Promise.reject(new Error('not_found')),
+  // Product and category artwork resolve to the bundled files; anything else genuinely is
+  // absent in the demo. Returning a Blob keeps the callers' URL.createObjectURL path intact.
+  //
+  // Matched with startsWith rather than a regex on purpose: the path is a fixed prefix plus an
+  // id or a name, and a literal comparison cannot be got wrong by an escaping mistake.
+  getBlob: async (path) => {
+    const p = String(path || '');
+    const P_PREFIX = '/product-images/';
+    const C_PREFIX = '/category-images/';
+    let file = null;
+    if (p.startsWith(P_PREFIX)) {
+      const id = p.slice(P_PREFIX.length);
+      if (id && /^[0-9]+$/.test(id)) file = ART_BASE + '/p-' + id + '.png';
+    } else if (p.startsWith(C_PREFIX)) {
+      const cat = decodeURIComponent(p.slice(C_PREFIX.length));
+      if (cat) file = ART_BASE + '/c-' + artSlug(cat) + '.png';
+    }
+    if (!file) throw new Error('not_found');
+    const res = await fetch(file);
+    if (!res.ok) throw new Error('not_found');
+    return res.blob();
+  },
   setToken, getToken, setOnSessionExpired,
 };
 export default api;
