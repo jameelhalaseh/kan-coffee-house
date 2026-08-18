@@ -145,7 +145,22 @@ function CategoryGrid({ cards, total, onPick, emptyHint }) {
 // left in RTL) so it lands under the thumb on a counter tablet.
 function CategoryHeader({ title, count, onBack, extra }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+    // flexWrap so neither control can be pushed off a narrow counter screen, and a BACK
+    // button at the leading edge. The trailing '‹ Categories' button below was the only way
+    // back, and it was reported as missing twice by someone looking straight at it: people
+    // look top-LEFT for back, the label said 'Categories' rather than 'Back', and the amber
+    // fill read as a primary action. Both call the same handler; the trailing one stays
+    // because on a counter tablet it is the one under the thumb.
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+      {onBack && (
+        <button onClick={onBack} aria-label={ARABIC ? 'رجوع' : 'Back'} style={{
+          ...S.btn, padding: '12px 18px', fontSize: 16, fontWeight: 800,
+          background: C.accent, color: C.accentText, border: `1px solid ${C.accent}`,
+          borderRadius: 12, whiteSpace: 'nowrap', boxShadow: '0 4px 14px rgba(240,168,48,.25)',
+        }}>
+          {ARABIC ? 'رجوع →' : '← Back'}
+        </button>
+      )}
       <span style={{ fontSize: 17, fontWeight: 800, color: C.text }}>{title}</span>
       <span style={{ fontSize: 13, color: C.dim }}>
         {count} {ARABIC ? 'صنف' : count === 1 ? 'item' : 'items'}
@@ -153,9 +168,8 @@ function CategoryHeader({ title, count, onBack, extra }) {
       {extra}
       {onBack && (
         <button onClick={onBack} style={{
-          ...S.btn, marginInlineStart: 'auto', padding: '14px 22px', fontSize: 17, fontWeight: 800,
-          background: C.accent, color: C.accentText, border: `1px solid ${C.accent}`,
-          borderRadius: 12, whiteSpace: 'nowrap', boxShadow: '0 4px 14px rgba(240,168,48,.25)',
+          ...S.btnGhost, marginInlineStart: 'auto', padding: '14px 22px', fontSize: 17, fontWeight: 800,
+          borderRadius: 12, whiteSpace: 'nowrap',
         }}>
           {ARABIC ? 'الأقسام ›' : '‹ Categories'}
         </button>

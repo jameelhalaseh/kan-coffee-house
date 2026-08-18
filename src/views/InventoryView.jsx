@@ -52,7 +52,7 @@ function InventoryView({ isAdmin, notify }) {
         <CategoryHeader
           title={searching ? (ARABIC ? 'نتائج البحث' : 'Search results') : catTitle(cat)}
           count={rows.length}
-          onBack={searching ? null : () => setCat(null)} />
+          onBack={() => { setQ(''); setCat(null); }} />
       )}
 
       {browsing ? (
