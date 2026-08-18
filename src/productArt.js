@@ -47,23 +47,39 @@ async function fetchOne(id) {
   }
 }
 
-// Load the manifest once per page, then fetch only the images that exist.
+// Load the MANIFEST only — which products have artwork, and how fresh it is. A few hundred
+// bytes, once per page.
 //
-// The fetches run in parallel, and each response is `immutable` with a year-long max-age, so
-// this costs one request per product-with-artwork on the FIRST load of a session and nothing
-// afterwards — including across screen changes, because the browser serves them from its own
-// HTTP cache rather than coming back here.
+// The bytes are deliberately NOT pulled here; see ensureProductArt below for why fetching
+// the whole catalogue up front does not survive going from 13 categories to 44 products.
 export async function loadProductArt() {
   try {
     const rows = await api.get('/product-images');
     manifest = new Map((rows || []).map((r) => [key(r.product_id), r.updated_at]));
     loaded = true;
     notify();
-    await Promise.all([...manifest.keys()].map(fetchOne));
   } catch (_) {
     loaded = true;   // offline or unauthorised: every tile keeps its category artwork
     notify();
   }
+}
+
+// Fetch ONE product's bytes, on demand, deduped.
+//
+// This replaced a Promise.all over the whole manifest, which is what the category version
+// does — and which does not survive the change of grain. Thirteen categories is thirteen
+// small requests; forty-four products at 512x512 is ~12MB and 44 concurrent fetches on every
+// load, and decoding all of them is ~45MB of bitmap. It froze the renderer outright.
+//
+// Now the manifest (a few hundred bytes) loads up front and the bytes follow only for tiles
+// actually on screen — at most one category at a time. Responses are immutable with a
+// year-long max-age, so revisiting a shelf costs nothing.
+const inFlight = new Set();
+export function ensureProductArt(id) {
+  const k = key(id);
+  if (!manifest.has(k) || objectUrls.has(k) || inFlight.has(k)) return;
+  inFlight.add(k);
+  fetchOne(k).finally(() => inFlight.delete(k));
 }
 
 // Re-read one product after an upload or delete, so its tile updates without a reload.

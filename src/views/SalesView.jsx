@@ -15,6 +15,7 @@ import BillPaper, { billFromSale, PAPER } from '../components/BillPaper';
 import { beep } from '../sound';
 import { Overlay, NumPad, qtyBtn } from '../components/ui';
 import { categoryCards, inCat, CategoryGrid, CategoryHeader, catTitle, useProductArt } from '../components/categories';
+import { ensureProductArt } from '../productArt';
 import ProductModal from '../components/ProductModal';
 
 
@@ -281,6 +282,17 @@ function SalesView({ user, notify }) {
     return inCat(p, cat);
   });
 
+  // Pull pictures only for the tiles actually on screen. Fetching every product's artwork
+  // up front froze the renderer outright: 44 images at 512x512 is ~12MB of transfer and
+  // ~45MB of decoded bitmap. One shelf at a time is at most thirteen.
+  const tileIds = tiles.map((t) => t.id).join(',');
+  useEffect(() => {
+    if (browsing) return;
+    tiles.forEach((p) => ensureProductArt(p.id));
+    // tiles is a fresh array every render; tileIds is the stable identity of what is shown.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tileIds, browsing]);
+
   return (
     <div dir="ltr" style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
       {/* Left: scan + tap-to-add product tiles */}
@@ -351,7 +363,12 @@ function SalesView({ user, notify }) {
           <CategoryHeader
             title={searching ? (ARABIC ? 'نتائج البحث' : 'Search results') : catTitle(cat)}
             count={tiles.length}
-            onBack={searching ? null : () => setCat(null)} />
+            /* Always offered, including from search results. It used to be withheld while
+               searching, which left the one screen you can reach by typing with no way
+               back to the shelves at all — you had to work out that clearing the box was
+               the exit. Going back clears the search too, because that is what "back to
+               the menu" means to someone holding a queue. */
+            onBack={() => { setScan(''); setCat(null); }} />
         )}
 
         {browsing ? (
