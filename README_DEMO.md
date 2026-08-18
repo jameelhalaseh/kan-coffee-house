@@ -119,6 +119,17 @@ The demo catalogue in `demoApi.js` must stay Kan's menu. It previously seeded gr
 (Laban, Pita Bread, Dish Soap) inherited from the Dukkan ancestor, which under Kan's name
 reads as the wrong shop's till.
 
+The pictures come from `public/demo-art/` — 44 products and 6 categories at 192px, exported
+from the database — because the artwork itself lives in Postgres and the demo has no server.
+`demoApi` answers the manifest calls from that folder, so `productArt.js` and `categoryArt.js`
+need no demo awareness.
+
+**Financials is hidden in the demo build** (`FALLBACK_VIEWS` in `src/client.config.js`).
+`demoApi` implements the one-segment report endpoints but not the store-scoped ones that screen
+calls, so all six of its tabs answered "Failed to load the report" — six red errors in the
+build a client is shown. It is hidden rather than stubbed because the demo carries no sales at
+all, so a complete implementation would still show six blank ledgers.
+
 ## Config
 
 Everything client-specific is environment, read at boot by `server/clientConfig.js` and served
@@ -127,7 +138,12 @@ to the browser as `GET /client-config.js` → `window.__CLIENT__`. See `.env`.
 The literals in `src/client.config.js` are only the **fallback** for when no server answers
 (the Pages demo, the jsdom tests). They hold Kan's identity, and `DEFAULT_VIEWS` there is
 load-bearing: it omits `assistant` so the AI button the owner switched off cannot reappear in
-the demo build.
+the demo build, and `FALLBACK_VIEWS` drops `storereports` in the demo build only.
+
+`reporting/` keeps its OWN migrations and its own ledger, applied by `npm run migrate:reporting`
+— `npm run setup` now runs both sets. Skipping it leaves the server booting perfectly while
+every Financials tab fails, so `server/index.js` warns at boot when the reporting schema is
+absent and names the command that fixes it.
 
 `server/floors.js` (`FLOORS = ['main']` → the `orders_main` table) must agree with
 `src/client.config.js`'s store key. The design system lives in `src/theme.js` and is shared

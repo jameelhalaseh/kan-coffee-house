@@ -1,18 +1,24 @@
 // Jest globalSetup for the reporting module's Postgres suite.
 //
 // Its own database (reporting_test), dropped and recreated per run, so a run can never touch
-// the demo data or race the server suite's liquorpos_test. The schema under test is the
+// the demo data or race the server suite's kanpos_test. The schema under test is the
 // schema that ships: reporting/migrate.js applies the real migration files.
 //
 // Point REPORTING_TEST_DATABASE_URL anywhere to run this in CI. The default is the local
 // docker-compose container (`npm run db:up`).
+//
+// PORT 5435, matching docker-compose.yml and server/test/setupEnv.js. The inherited default
+// was 5433, and this setup file CREATES AND DROPS a database on whatever it reaches - on a
+// machine running several of these shops, 5433 is a DIFFERENT project's Postgres. It failed
+// on authentication rather than doing harm, but the port belongs pinned to this fork's own
+// container, not left aimed at a neighbour.
 const { Client, Pool } = require('pg');
 const { execFileSync } = require('child_process');
 const path = require('path');
 const { migrate } = require('../migrate');
 
 const TEST_URL = process.env.REPORTING_TEST_DATABASE_URL
-  || 'postgres://pos:pos@localhost:5433/reporting_test';
+  || 'postgres://pos:pos@localhost:5435/reporting_test';
 
 module.exports = async () => {
   const url = new URL(TEST_URL);

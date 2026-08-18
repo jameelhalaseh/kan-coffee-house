@@ -87,7 +87,7 @@ function printReceipt(sale) {
   }, 250);
 }
 // ── Audio feedback (WebAudio, no assets) ─────────────────────────────────────────
-// Success: one short high beep (scan accepted). Error: two low buzzes (unknown barcode).
+// Success: one short high beep (item added). Error: two low buzzes (the action was refused).
 
 export default printReceipt;
 export { printReceipt, buildReceipt };

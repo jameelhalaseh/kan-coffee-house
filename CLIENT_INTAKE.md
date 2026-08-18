@@ -6,9 +6,18 @@ Record of what was agreed on **2026-08-17**. Every line maps to an env var in th
 > **Deviation from the standard onboarding, agreed deliberately.** The platform model is one
 > shared image serving many shops, where a client is a database + `.env` + Caddy block +
 > container and **never** a copy of the repository. Kan was instead delivered as a **fork**
-> (`kan-coffee-house`, private) at the owner's explicit instruction, after the trade-off was
+> (`kan-coffee-house`) at the owner's explicit instruction, after the trade-off was
 > put to them. The cost accepted: every future fix to the shared template must be applied
 > twice. The template remote is kept as `template` so upstream changes can still be merged.
+>
+> **The fork is PUBLIC, not private as first recorded here.** It was made public so GitHub
+> Pages could host the demo, which the free plan will not do for a private repository. Two
+> consequences the owner should know: the 51 product and category thumbnails under
+> `public/demo-art/` are downloadable by anyone with the URL (192px demo copies - the
+> full-resolution artwork stays in the database), and Kan's menu and prices are readable in
+> `server/seed-products.sql`. No credentials, tax number or customer data are in the repo, and
+> `.env` is gitignored. If the owner would rather none of that were public, the fix is to make
+> the repository private, which takes the demo link down with it.
 >
 > Consequence for this document: paths like `/srv/clients/kancoffee/` do not exist yet. Config
 > lives in this repo's `.env`, and the shop currently runs locally only.

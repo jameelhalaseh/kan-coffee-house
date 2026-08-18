@@ -23,6 +23,51 @@ const on = (over) => ({
   floor: 'main', status: 'paid', voided_at: null, items: [], sub: 0, tax: 0, total: 0, ...over,
 });
 
+// ── The discount RATE, because the till now asks for one ──────────────────────
+// SalesView takes a discount as a percentage of the line, so the Discounts report has to be
+// able to show that percentage back. Two paths, and both must hold: a line rung after the
+// change carries disc_pct, and one rung before it carries only the money.
+describe('discounts report — the rate', () => {
+  const line = (over) => ({ name: 'Latte', qty: 2, price: '3.250', disc: '1.300', ...over });
+
+  test('reports the percentage the cashier actually typed', () => {
+    const rep = R.discountsReport(
+      [on({ id: 'a', invoice_no: 1, date: '2026-08-12', items: [line({ disc_pct: 20 })] })],
+      'main', ALL,
+    );
+    expect(rep.rows[0].pct).toBe('20');
+    expect(rep.rows[0].disc.toFixed(3)).toBe('1.300');
+  });
+
+  test('recovers the effective rate for a line saved before percentages existed', () => {
+    const rep = R.discountsReport(
+      [on({ id: 'b', invoice_no: 2, date: '2026-08-12', items: [line()] })],
+      'main', ALL,
+    );
+    // 1.300 off a 6.500 line is 20%, derived from the two amounts rather than invented.
+    expect(rep.rows[0].pct).toBe('20');
+  });
+
+  test('carries one decimal place, and no float noise', () => {
+    const rep = R.discountsReport(
+      [on({ id: 'c', invoice_no: 3, date: '2026-08-12',
+        items: [line({ price: '3.000', qty: 1, disc: '1.000' })] })],
+      'main', ALL,
+    );
+    expect(rep.rows[0].pct).toBe('33.3');
+  });
+
+  test('the exported sheet carries the rate as its own numeric column', () => {
+    const sheet = X.discountsSheet(
+      [on({ id: 'd', invoice_no: 4, date: '2026-08-12', items: [line({ disc_pct: 15 })] })],
+      'main', ALL,
+    );
+    const header = sheet.rows.find((r) => r.includes('Discount'));
+    expect(header).toContain('Rate %');
+    expect(sheet.rows[header ? sheet.rows.indexOf(header) + 1 : 0]).toContain(15);
+  });
+});
+
 // ── §4 — round at the edge, not per row ───────────────────────────────────────
 test('4 — the TOTAL row comes from the raw sums, and may differ from the rounded cells', () => {
   // 3dp currency, so the half-cent case lives in the fourth decimal.

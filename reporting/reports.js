@@ -96,6 +96,17 @@ function salesReport(orders, floor, period) {
 //
 // Voided bills are excluded by isSale, same as everywhere else: a discount on a sale that
 // did not happen is not a discount.
+// A plain string, not a Decimal: serialize() would render it at the store's MONEY precision
+// ("20.000%"), and a discount rate is not money. One decimal place is enough for every rate a
+// counter actually gives, and a whole number stays whole.
+function pctText(li, disc, gross) {
+  const recorded = Number(li.disc_pct ?? 0);
+  const n = recorded > 0
+    ? recorded
+    : (gross.toNumber() > 0 ? disc.div(gross).mul(100).toNumber() : 0);
+  return String(Math.round(n * 10) / 10);
+}
+
 function discountsReport(orders, floor, period) {
   const rows = [];
   scope(orders, floor, period)
@@ -106,15 +117,22 @@ function discountsReport(orders, floor, period) {
       (o.items || []).forEach((li) => {
         if (!(Number(li.disc ?? 0) > 0)) return;
         const disc = d(li.disc ?? 0);
+        const gross = d(li.price ?? 0).mul(li.qty ?? 0);
         rows.push({
           date: o.date,
           billNo: billNo(o),
           item: li.name || '',
           size: li.size || '',
           qty: d(li.qty ?? 0),
-          gross: d(li.price ?? 0).mul(li.qty ?? 0),
+          gross,
           disc,
-          net: d(li.price ?? 0).mul(li.qty ?? 0).sub(disc),
+          // The till asks for a discount as a PERCENTAGE, not an amount, so this report has to
+          // be able to say "20%" - reading back only 0.650 leaves the owner re-deriving the
+          // number the cashier actually authorised. `disc_pct` is what was typed and wins.
+          // A line rung before that change carries the two amounts and no percentage, so fall
+          // back to the rate they imply: the same figure recovered, not invented.
+          pct: pctText(li, disc, gross),
+          net: gross.sub(disc),
           note: li.disc_note || '',
           cashier: o.waiter || '',
         });

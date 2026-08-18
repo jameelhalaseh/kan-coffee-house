@@ -66,6 +66,20 @@ jobs:
       - name: Server tests
         run: npm run test:server
 
+      # The reporting module (reporting/) powers the whole Financials screen, and CI used to
+      # run NEITHER of its suites - 56 pure tests plus a Postgres suite - so the one module
+      # the shop's accountant depends on was the one module nothing verified.
+      - name: Reporting tests (pure)
+        run: npm run test:reporting
+
+      # Against a real Postgres, with the module's own migrations applied by its globalSetup.
+      # This is what would have caught the missing `expenses` table: the queries are only as
+      # deployable as the schema they are run against.
+      - name: Reporting tests (Postgres)
+        run: npm run test:reporting:pg
+        env:
+          REPORTING_TEST_DATABASE_URL: postgres://pos:pos@localhost:5435/reporting_test
+
       # A green suite against a build that doesn't compile is a false pass. INLINE_RUNTIME_CHUNK
       # stays false here for the same reason production sets it: the CSP forbids inline scripts.
       - name: Production build

@@ -116,11 +116,11 @@ function discountsSheet(orders, floor, period) {
   const rep = R.discountsReport(orders, floor, period);
   const m = (v) => money(v, s.dp);
   const table = [
-    ['Date', 'Bill No', 'Item', 'Size', 'Qty', 'Before Discount', 'Discount', 'After Discount', 'Reason', 'Cashier'],
+    ['Date', 'Bill No', 'Item', 'Size', 'Qty', 'Before Discount', 'Discount', 'Rate %', 'After Discount', 'Reason', 'Cashier'],
     ...rep.rows.map((r) => [
-      r.date, r.billNo, r.item, r.size, qty(r.qty), m(r.gross), m(r.disc), m(r.net), r.note, r.cashier,
+      r.date, r.billNo, r.item, r.size, qty(r.qty), m(r.gross), m(r.disc), Number(r.pct), m(r.net), r.note, r.cashier,
     ]),
-    ['TOTAL', '', '', '', '', m(rep.totals.gross), m(rep.totals.disc), '', '', ''],
+    ['TOTAL', '', '', '', '', m(rep.totals.gross), m(rep.totals.disc), '', '', '', ''],
   ];
   return { name: 'Discounts', ...sheet(s, period.label, table) };
 }

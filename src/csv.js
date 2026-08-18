@@ -194,10 +194,18 @@ export function parseProductCsv(text) {
   return { items, errors, error: null };
 }
 
-// A blank template the user can download, fill in Excel, and re-upload.
+// The template's header says `sku`, not `barcode`. Kan has no scanner, so the app calls that
+// field SKU on every screen the shop sees; `sku` is an accepted alias for the same column
+// (HEADER_ALIASES above), so a template filled in and re-uploaded still parses.
+const TEMPLATE_COLUMNS = IMPORT_COLUMNS.map((c) => (c === 'barcode' ? 'sku' : c));
+
+// A blank template the user can download, fill in Excel, and re-upload. The example row is a
+// drink from THIS shop's menu: a template showing 'Example Whiskey / 700ml' in a coffee house
+// reads as somebody else's software, and a shopkeeper copying the row's shape would carry the
+// wrong units into their own catalogue.
 export function importTemplateCsv() {
   return '﻿' + [
-    IMPORT_COLUMNS.join(','),
-    '6291234567890,Example Whiskey,24.500,17.000,12,Whiskey,700ml,6,yes',
+    TEMPLATE_COLUMNS.join(','),
+    'KC-HC-01,Example Latte,3.250,1.100,9999,Hot Coffee,Large,0,yes',
   ].join('\r\n') + '\r\n';
 }

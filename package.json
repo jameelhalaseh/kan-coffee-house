@@ -41,7 +41,7 @@
     "db:up": "docker compose up -d",
     "db:down": "docker compose down",
     "db:reset": "docker compose down -v && docker compose up -d",
-    "setup": "npm run migrate && npm run seed:products",
+    "setup": "npm run migrate && npm run migrate:reporting && npm run seed:products",
     "seed:demo-sales-DESTRUCTIVE": "node server/seed-demo-sales.js",
     "heroku-postbuild": "cross-env INLINE_RUNTIME_CHUNK=false react-scripts build"
   },

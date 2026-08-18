@@ -3,7 +3,7 @@
 // Server tests run against a REAL Postgres — the routes' whole job is transactions,
 // unique constraints and row locks, and a mocked `pg` would assert nothing about any of
 // them. What is mocked away instead is the *demo data*: tests get their own database
-// (liquorpos_test by default), created and migrated from scratch here, so a test run can
+// (kanpos_test by default), created and migrated from scratch here, so a test run can
 // never touch the catalogue or sales the shop is showing.
 //
 // Point TEST_DATABASE_URL at any Postgres to run this elsewhere (CI). Default is this

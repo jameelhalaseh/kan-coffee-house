@@ -1,4 +1,4 @@
-// Audio feedback for the scanner. WebAudio only — no asset to ship or fail to load.
+// Audio feedback for the till. WebAudio only — no asset to ship or fail to load.
 let _audioCtx = null;
 function beep(ok = true) {
   try {

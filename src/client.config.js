@@ -164,9 +164,22 @@ export const ALL_VIEWS = ["sales", "inventory", "receive", "history", "reports",
 // CLIENT_VIEWS in .env. A live deployment still overrides this with its own env.
 const DEFAULT_VIEWS = ["sales", "inventory", "receive", "history", "reports", "storereports", "settings"];
 
+// The GitHub Pages demo drops Financials on top of that, for the same reason it drops the
+// assistant: the demo has no server, and src/demoApi.js implements the one-segment report
+// endpoints (/reports/summary, /zreport, ...) but NOT the store-scoped ones the Financials
+// screen calls (/reports/main/sales, /discounts, /stock, /expenses, /pnl, /receipts). Every
+// one of its six tabs answered "Failed to load the report" - six red errors in the build a
+// client is shown, which reads as broken software rather than as an unimplemented demo.
+//
+// Hidden rather than stubbed, because a stub would be worse: the demo carries no sales at all
+// (demoApi's db.orders is empty), so even a complete implementation would show an owner six
+// blank ledgers. The real deployment sends its own CLIENT_VIEWS and keeps the tab.
+const DEMO = process.env.REACT_APP_DEMO === '1';
+const FALLBACK_VIEWS = DEMO ? DEFAULT_VIEWS.filter((v) => v !== "storereports") : DEFAULT_VIEWS;
+
 export const VIEWS = Array.isArray(RUNTIME.views) && RUNTIME.views.length
   ? ALL_VIEWS.filter((v) => RUNTIME.views.includes(v))
-  : ALL_VIEWS.filter((v) => DEFAULT_VIEWS.includes(v));
+  : ALL_VIEWS.filter((v) => FALLBACK_VIEWS.includes(v));
 export const VIEW_LABELS = {
   sales: ARABIC ? "البيع" : "Sales",
   inventory: ARABIC ? "المخزون" : "Inventory",

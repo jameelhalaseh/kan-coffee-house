@@ -52,7 +52,18 @@ function ReceiveView({ notify }) {
         <Field label={ARABIC ? 'المنتج' : 'Product'}>
           <select style={sel} value={form.product_id} onChange={(e) => setForm({ ...form, product_id: e.target.value })}>
             <option value="">{ARABIC ? '— اختر —' : '— select —'}</option>
-            {products.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            {/* Name ALONE is not unique on this menu: Caramel Macchiato and Spanish Latte each
+                exist twice, once as Hot Coffee and once as Cold Coffee, at different prices and
+                under different SKUs. Two identical-looking options in a stock-receiving form is
+                a delivery booked against the wrong drink, and nothing on screen would say so.
+                The category disambiguates them; the size is appended when the shop has set one. */}
+            {products.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+                {p.size ? ' ' + p.size : ''}
+                {p.cat ? ' — ' + p.cat : ''}
+              </option>
+            ))}
           </select>
         </Field>
         <Field label={ARABIC ? 'المورّد' : 'Supplier'}>

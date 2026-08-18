@@ -182,7 +182,7 @@ function ProductModal({ initial, onClose, onSaved, notify, editing, isAdmin }) {
         onSaved(p);
       }
     } catch (ex) {
-      notify(ex.message === 'exists' ? (ARABIC ? 'باركود مكرر' : 'Barcode already exists')
+      notify(ex.message === 'exists' ? (ARABIC ? 'رمز مكرر' : 'That SKU already exists')
         : ex.message === 'admin_only' ? (ARABIC ? 'تعديل السعر يتطلب صلاحية مدير' : 'Price changes need an admin')
         : (ARABIC ? 'فشل الحفظ' : 'Save failed'), 'red');
     } finally { setBusy(false); }

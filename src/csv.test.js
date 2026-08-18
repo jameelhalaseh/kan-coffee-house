@@ -233,7 +233,12 @@ describe('importTemplateCsv', () => {
     expect(error).toBeNull();
     expect(errors).toEqual([]);
     expect(items).toHaveLength(1);
-    expect(items[0]).toMatchObject({ name: 'Example Whiskey', size: '700ml', low_at: 6 });
+    expect(items[0]).toMatchObject({ barcode: 'KC-HC-01', name: 'Example Latte', size: 'Large', low_at: 0 });
+  });
+
+  test('heads the SKU column `sku`, which the parser maps back to barcode', () => {
+    expect(importTemplateCsv()).toContain('sku,name,price');
+    expect(parseProductCsv(importTemplateCsv()).items[0].barcode).toBe('KC-HC-01');
   });
 
   test('starts with a BOM so Arabic opens correctly in Excel', () => {

@@ -826,7 +826,16 @@ function Body({ tab, data, isAdmin, onDelete, span, preset, receiptDate, onJump,
                   <td style={cell}>{r.item}{r.size ? <span style={{ color: C.dim }}> · {r.size}</span> : ''}</td>
                   <td style={{ ...num, borderInlineEnd: G.GROUP_RULE }}>{r.qty}</td>
                   <td style={{ ...num, color: C.dim }}>{r.gross}</td>
-                  <td style={{ ...num, color: C.green, fontWeight: 800 }}>−{r.disc}</td>
+                  {/* The amount AND the rate in one cell, rather than a tenth column: the till
+                      takes the discount as a percentage, so that is the number the cashier
+                      authorised and the owner recognises - but the money is what the P&L moves
+                      by, so neither one can be the only figure shown. */}
+                  <td style={{ ...num, color: C.green, fontWeight: 800 }}>
+                    −{r.disc}
+                    {r.pct && r.pct !== '0' && (
+                      <span style={{ color: C.dim, fontWeight: 700, fontSize: 12 }}> ({r.pct}%)</span>
+                    )}
+                  </td>
                   <td style={{ ...num, fontWeight: 700, borderInlineEnd: G.GROUP_RULE }}>{r.net}</td>
                   {/* A discount with no reason recorded is itself worth seeing, so say so rather
                       than leaving the cell blank and ambiguous. */}

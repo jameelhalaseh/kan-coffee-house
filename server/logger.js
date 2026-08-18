@@ -14,7 +14,10 @@
 // NEVER log request bodies. They carry passwords on /auth/login and PII on /customers.
 const crypto = require('crypto');
 
-const SERVICE = process.env.SERVICE_NAME || 'liquor-pos';
+// Names this shop in every log line and every webhook alert. Defaulted to Kan rather than
+// the template's 'liquor-pos': an alert that pages someone at 2am should say whose till it
+// came from, and the inherited default would have labelled Kan's outage as the liquor shop's.
+const SERVICE = process.env.SERVICE_NAME || 'kan-pos';
 const ALERT_URL = (process.env.ALERT_WEBHOOK_URL || '').trim();
 const ALERT_MIN_GAP_MS = Number(process.env.ALERT_MIN_GAP_MS) || 5 * 60 * 1000;
 

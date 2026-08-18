@@ -262,7 +262,30 @@ process.on('uncaughtException', (e) => {
 // guard every test run would race the dev server for :3001.
 if (require.main === module) {
   const PORT = process.env.PORT || 3001;
-  app.listen(PORT, () => log.info('api listening', { port: PORT, tz: process.env.STORE_TZ || 'Asia/Amman' }));
+
+  // The reporting module (reporting/) keeps its own migration set and its own ledger, applied
+  // by `npm run migrate:reporting` rather than by the server migrations. Nothing forces the
+  // two to be run together, and a server whose reporting schema was never applied BOOTS
+  // PERFECTLY - it serves sales, stock and receipts, and only fails when somebody opens
+  // Financials, where all six tabs answer 'Failed to load the report'.
+  //
+  // That is the wrong shape of failure: the shop finds it in front of a customer, weeks after
+  // the deploy, and it looks like a bug rather than a missing setup step. So say it at boot,
+  // once, naming the command. It is a warning and not a hard exit on purpose - the till must
+  // still open for trade with a broken accountant's screen.
+  const reportingSchemaCheck = pool.query(
+    "select to_regclass('public.expenses') is not null as ok",
+  ).then(({ rows }) => {
+    if (!rows[0] || !rows[0].ok) {
+      log.warn('reporting schema is NOT applied - the Financials screen will fail on every tab', {
+        fix: 'npm run migrate:reporting',
+      });
+    }
+  }).catch((e) => log.warn('could not check the reporting schema', { error: e.message }));
+
+  reportingSchemaCheck.finally(() => {
+    app.listen(PORT, () => log.info('api listening', { port: PORT, tz: process.env.STORE_TZ || 'Asia/Amman' }));
+  });
 }
 
 module.exports = app;

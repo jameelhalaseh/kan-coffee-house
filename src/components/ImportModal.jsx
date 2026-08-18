@@ -58,7 +58,7 @@ function ImportModal({ onClose, onImported, notify }) {
       onImported();
     } catch (ex) {
       notify(ex.message === 'not_admin' ? (ARABIC ? 'الاستيراد يتطلب صلاحية مدير' : 'Import needs an admin')
-        : ex.message === 'exists' ? (ARABIC ? 'باركود مكرر في الملف' : 'A barcode in this file already exists')
+        : ex.message === 'exists' ? (ARABIC ? 'رمز مكرر في الملف' : 'An SKU in this file already exists')
         : ex.message === 'too_many_rows' ? (ARABIC ? 'عدد الصفوف كبير جداً' : 'Too many rows')
         : (ARABIC ? 'فشل الاستيراد — لم يتغيّر شيء' : 'Import failed — nothing was changed'), 'red');
     } finally { setBusy(false); }
@@ -73,8 +73,8 @@ function ImportModal({ onClose, onImported, notify }) {
 
         <div style={{ fontSize: 13, color: C.dim, lineHeight: 1.5 }}>
           {ARABIC
-            ? 'الأعمدة: barcode, name, price, cost, stock, cat, size, low_at, active — الاسم فقط إلزامي.'
-            : 'Columns: barcode, name, price, cost, stock, cat, size, low_at, active — only name is required.'}
+            ? 'الأعمدة: sku, name, price, cost, stock, cat, size, low_at, active — الاسم فقط إلزامي.'
+            : 'Columns: sku, name, price, cost, stock, cat, size, low_at, active — only name is required.'}
           {' '}
           <button type="button" onClick={downloadTemplate}
             style={{ background: 'none', border: 'none', padding: 0, color: C.accent, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', fontSize: 13, textDecoration: 'underline' }}>
