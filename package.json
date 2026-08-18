@@ -36,11 +36,12 @@
     "seed:admin": "node server/seed-admin.js",
     "seed:users": "node server/seed-users.js",
     "seed:products": "node server/seed-products.js",
+    "seed:images": "node server/seed-images.js",
     "reset:data": "node server/reset-data.js",
     "db:up": "docker compose up -d",
     "db:down": "docker compose down",
     "db:reset": "docker compose down -v && docker compose up -d",
-    "setup": "npm run migrate && npm run migrate:reporting && npm run seed:products",
+    "setup": "npm run migrate && npm run migrate:reporting && npm run seed:products && npm run seed:images",
     "seed:demo-sales-DESTRUCTIVE": "node server/seed-demo-sales.js",
     "heroku-postbuild": "cross-env INLINE_RUNTIME_CHUNK=false GENERATE_SOURCEMAP=false react-scripts build"
   },

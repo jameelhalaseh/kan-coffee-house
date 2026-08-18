@@ -18,15 +18,31 @@ run side by side here. Changing them back will collide.
 ## Run it
 
 ```bash
-cd "C:\Users\user\OneDrive - RM Network\Dev\7uloultech\kan-coffee-house"
+git clone https://github.com/jameelhalaseh/kan-coffee-house.git
+cd kan-coffee-house
 npm install                 # once
 npm run db:up               # Postgres 16 in Docker on localhost:5435
-npm run setup               # migrate + seed Kan's 44-drink menu
+npm run setup               # migrations + Kan's 44-drink menu + all 50 pictures
 npm run build               # production React bundle
 npm run server              # http://localhost:3003
 ```
 
 Open <http://localhost:3003>.
+
+`npm run setup` is four steps: the app migrations, the reporting migrations, the catalogue, and
+then the pictures. All four are idempotent, so re-running it on an existing database is safe.
+
+**The artwork is in the repo now**, so a clean clone gets it without a copy of anyone's
+database. `server/seed-images/` holds 44 product PNGs named by SKU (`KC-HC-02.png`) plus 6
+category PNGs and a `categories.json` mapping their slugs back to the real names — 512x512 with
+transparency, ~15MB. `npm run seed:images` loads them into the `product_images` /
+`category_images` tables on its own if you only want to refresh the pictures.
+
+Named by SKU rather than by row id on purpose: `product_images.product_id` is a serial that
+depends on insert order, so `12.png` would attach the cappuccino's picture to whatever landed on
+row 12 in someone else's database. SKUs come from `server/seed-products.sql` and are identical
+everywhere, so the filename is the join key. A file whose SKU is not in the catalogue is
+reported rather than silently skipped.
 
 `npm run setup` does **not** create logins — passwords are never written to a file. Seed them
 by passing them on the command line (see the bottom of `.env`), then log in as `owner`.
@@ -121,6 +137,7 @@ reads as the wrong shop's till.
 
 The pictures come from `public/demo-art/` — 44 products and 6 categories at 192px, exported
 from the database — because the artwork itself lives in Postgres and the demo has no server.
+(The full-resolution set is committed separately under `server/seed-images/`, for the real till.)
 `demoApi` answers the manifest calls from that folder, so `productArt.js` and `categoryArt.js`
 need no demo awareness.
 

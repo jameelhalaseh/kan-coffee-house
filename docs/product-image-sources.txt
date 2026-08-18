@@ -6,7 +6,12 @@ Kan Coffee House  ·  uploaded 2026-08-18  ·  all 44 products
 WHY THIS FILE EXISTS
 
 The artwork lives in the `product_images` table (migration 0012), which is bytes in
-Postgres — so it is not in this repository and a `git clone` does not bring it.
+Postgres. It used to be ONLY there, so a `git clone` brought a working till with 44
+unillustrated drinks and the pictures existed on one laptop and in one Downloads
+folder. They are now committed under `server/seed-images/`, named by SKU, and
+`npm run seed:images` (part of `npm run setup`) loads them back — so this file is a
+record of how the mapping was established rather than the only way to recover it.
+
 The generated files themselves arrived with names like
 
     ChatGPT Image Aug 18, 2026, 08_40_06 AM (7).png
