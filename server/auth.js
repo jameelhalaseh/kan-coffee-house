@@ -1,4 +1,4 @@
-// Auth + session model for the CashierPOS API.
+// Auth + session model for the Kan Coffee House POS API.
 //
 // Faithful port of the Supabase RPCs (AUTH_SETUP.sql / SECURITY_HARDENING.sql):
 //   * Session = an opaque random token stored in app_users.session_token (NOT a JWT).

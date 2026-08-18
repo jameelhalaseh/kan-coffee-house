@@ -20,7 +20,8 @@ npm-debug.log*
 .DS_Store
 Thumbs.db
 
-# Raw generated artwork drop-off. The shipped assets are the processed 512x512 PNGs in
-# src/assets/categories/ (~450KB total); these originals are ~20MB and only needed to
-# re-process at a different size. Keep them locally, out of git history.
+# Raw generated artwork drop-off: full-size renders, background removals, working files.
+# The SHIPPED artwork is the processed 512x512 PNGs committed under server/seed-images/
+# (~15MB, loaded by `npm run seed:images`). Originals are only needed to re-process at a
+# different size, so they stay local and out of git history.
 images/

@@ -16,7 +16,7 @@
 #   * Receipts printed here are cosmetic. The real shop still has no registered tax number
 #     (CLIENT_INTAKE.md, blocker #1) and must not issue real invoices.
 #
-# The real deployment paths are DEPLOY_HEROKU.md and DEPLOY_VPS.md.
+# The real deployment path is DEPLOY_VPS.md.
 name: Deploy demo to Pages
 
 on:

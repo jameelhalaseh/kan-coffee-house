@@ -1,6 +1,6 @@
 // Store registry.
 //
-// This build is the SINGLE-STORE liquor shop (server/floors.js → ['main']). The module was
+// This build is the SINGLE-STORE coffee house (server/floors.js → ['main']). The module was
 // written against a two-store restaurant (gg 16% / dealer 8%); those shops are gone, and with
 // them the store picker. What survives is the scoping itself: every query still carries the
 // floor, so the reports keep working unchanged if a second branch is ever added.

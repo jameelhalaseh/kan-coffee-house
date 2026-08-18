@@ -2,7 +2,7 @@
 // Used for the admin password-reset code so the secret is delivered out-of-band
 // to the account's own inbox — never returned in an HTTP response (see auth.js).
 //
-// Required Heroku config vars (all four):
+// Required environment variables (all four):
 //   EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, EMAILJS_PUBLIC_KEY, EMAILJS_PRIVATE_KEY
 // The template must reference {{code}} (and may use {{to_email}}, {{username}}).
 // In the EmailJS dashboard: Account → Security → enable "Allow EmailJS API for

@@ -1,4 +1,4 @@
-// pg connection pool for the CashierPOS API.
+// pg connection pool for the Kan Coffee House POS API.
 //
 // SSL: managed Postgres (Heroku) requires TLS over a self-signed chain, so
 // rejectUnauthorized must be false there. A Postgres container on a private Docker network

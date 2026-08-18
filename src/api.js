@@ -1,4 +1,4 @@
-// CashierPOS API client — replaces the Supabase client (src/db.js).
+// API client for the POS. One fetch wrapper, one place the Bearer token is attached.
 // Browser → fetch('/api/...') with a Bearer session token → Express → Postgres.
 //
 // Contract:
@@ -112,7 +112,7 @@ const realApi = {
 };
 
 // DEMO build (GitHub Pages, no backend): swap in the in-browser mock API. Flag is set
-// only for the Pages build (REACT_APP_DEMO=1); the real Heroku build keeps realApi.
+// only for the Pages build (REACT_APP_DEMO=1); every real build keeps realApi.
 // eslint-disable-next-line
 const api = process.env.REACT_APP_DEMO === '1' ? require('./demoApi').default : realApi;
 

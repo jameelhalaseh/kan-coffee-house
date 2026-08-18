@@ -5,7 +5,7 @@
 //   USERS_JSON='[{"username":"owner","password":"...","role":"admin"},
 //                {"username":"cashier1","password":"...","role":"user","allowed_views":["tables","kitchen"]}]'
 //   npm run seed:users
-//   heroku run -a <app> "USERS_JSON='[...]' npm run seed:users"
+//   docker compose exec -e USERS_JSON='[...]' app npm run seed:users
 //
 // role: 'admin' (full access) or 'user' (limited to allowed_views — floor views + tools).
 // allowed_views: array of view ids (floor view ids from client.config + 'kitchen','drinks',...).

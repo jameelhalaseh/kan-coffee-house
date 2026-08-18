@@ -1,7 +1,7 @@
 // Create (or reset) the first admin user — bcrypt is done here in Node, never in SQL.
 // Credentials come from env so no secret is ever committed:
 //   ADMIN_USERNAME=owner ADMIN_PASSWORD='strong-pass' [ADMIN_EMAIL=you@x.com] npm run seed:admin
-//   heroku run -a <app> "ADMIN_USERNAME=owner ADMIN_PASSWORD=... npm run seed:admin"
+//   docker compose exec -e ADMIN_USERNAME=owner -e ADMIN_PASSWORD='...' app npm run seed:admin
 try { require('dotenv').config(); } catch (_) {}
 
 const bcrypt = require('bcryptjs');

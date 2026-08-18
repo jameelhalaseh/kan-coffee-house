@@ -23,35 +23,19 @@ const FEED_CUT = [0x0a, 0x0a, 0x0a, 0x1d, 0x56, 0x42, 0x00]; // feed 3 + partial
 
 export const serialSupported = () => typeof navigator !== 'undefined' && 'serial' in navigator;
 
-// ── Transport mode ────────────────────────────────────────────────────────────
-// 'serial' = Web Serial (USB printer w/ virtual COM, e.g. Epson TM).
-// 'bridge' = POST ESC/POS bytes to a local helper that RAW-prints to the Windows
-//            printer queue — for LAN / generic USB printers with no COM port.
-const LS = (typeof localStorage !== 'undefined') ? localStorage : { getItem: () => null, setItem: () => {} };
-// Bridge (network) printing is allowed ONLY on the Dealer floor. Every other floor is
-// hard-forced to USB serial, so toggling can never affect GG.
-const BRIDGE_FLOOR = 'dealer';
-export const getPrintMode = (floor) => {
-  if (floor && floor !== BRIDGE_FLOOR) return 'serial';
-  return LS.getItem('pos_print_mode') || 'serial';
-};
-export const setPrintMode = (m) => LS.setItem('pos_print_mode', m === 'bridge' ? 'bridge' : 'serial');
-export const bridgeAllowed = (floor) => floor === BRIDGE_FLOOR;
-export const getBridgeUrl = () => LS.getItem('pos_bridge_url') || 'http://localhost:9110';
-export const setBridgeUrl = (u) => LS.setItem('pos_bridge_url', u || 'http://localhost:9110');
-export const getBridgePrinter = () => LS.getItem('pos_bridge_printer') || ''; // '' = default printer
-export const setBridgePrinter = (n) => LS.setItem('pos_bridge_printer', n || '');
+// ── Transport ─────────────────────────────────────────────────────────────────
+// Web Serial only: a USB printer with a virtual COM port (e.g. Epson TM), which is what Kan
+// has. Web Serial needs a SECURE CONTEXT, so a real host must be HTTPS — `localhost` counts,
+// which is why printing works in development.
+//
+// There was a second transport: POST the ESC/POS bytes to a local helper that RAW-printed to
+// the Windows queue, for LAN printers with no COM port. It was gated to `BRIDGE_FLOOR =
+// 'dealer'` - a floor from the two-restaurant ancestor - and this build has exactly one floor,
+// `main` (server/floors.js). So every one of its branches was unreachable: getPrintMode()
+// always returned 'serial' and bridgeAllowed() was always false. It has been removed along
+// with its helper script and its CSP grant, rather than left as code that reads like a feature.
 
 let _port = null;
-let _bridgeOk = false;
-
-function bytesToB64(bytes) {
-  let s = '';
-  for (let i = 0; i < bytes.length; i += 0x8000) {
-    s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
-  }
-  return btoa(s);
-}
 
 // Reuse an already-granted port (survives reloads) or prompt once. Must be called from a
 // user gesture the first time (Chrome requirement for requestPort).
@@ -74,14 +58,7 @@ async function ensureOpen(port) {
   }
 }
 
-export async function connectPrinter(floor) {
-  if (getPrintMode(floor) === 'bridge') {
-    // Validate the local bridge is running.
-    const r = await fetch(getBridgeUrl() + '/health', { method: 'GET' }).catch(() => null);
-    if (!r || !r.ok) throw new Error('Bridge not reachable at ' + getBridgeUrl() + ' — is the print helper running?');
-    _bridgeOk = true;
-    return true;
-  }
+export async function connectPrinter() {
   // Always open the picker so the user can switch/override the printer.
   if (!serialSupported()) throw new Error('Web Serial not supported in this browser');
   // Release any previously-open port before switching.
@@ -92,15 +69,7 @@ export async function connectPrinter(floor) {
   return true;
 }
 
-export function isConnected(floor) { return getPrintMode(floor) === 'bridge' ? _bridgeOk : !!_port; }
-
-// text/plain keeps the request "simple" (no CORS preflight); the bridge base64-decodes it.
-async function writeBytesBridge(bytes) {
-  const url = getBridgeUrl() + '/print' + (getBridgePrinter() ? ('?printer=' + encodeURIComponent(getBridgePrinter())) : '');
-  const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: bytesToB64(bytes) });
-  if (!r.ok) throw new Error('Bridge print failed (' + r.status + ')');
-  _bridgeOk = true;
-}
+export function isConnected() { return !!_port; }
 
 // Serialize jobs so two prints (or print + drawer) never race the same port open/writer.
 let _chain = Promise.resolve();
@@ -126,8 +95,7 @@ async function writeBytesSerial(bytes) {
   });
 }
 
-async function writeBytes(bytes, floor) {
-  if (getPrintMode(floor) === 'bridge') return writeBytesBridge(bytes);
+async function writeBytes(bytes) {
   return writeBytesSerial(bytes);
 }
 
@@ -193,15 +161,15 @@ function canvasToEscpos(canvas) {
 }
 
 // Print receipt image (+ optional drawer kick). Throws on failure so the caller can fall back.
-export async function printReceiptHTML(bodyHTML, css, { kick = true, floor } = {}) {
+export async function printReceiptHTML(bodyHTML, css, { kick = true } = {}) {
   const canvas = await rasterizeHTML(bodyHTML, css);
   const raster = canvasToEscpos(canvas);
   // Kick BEFORE feed+cut — some firmwares drop a kick that arrives after a partial cut.
   const bytes = [...INIT, ...raster, ...(kick ? DRAWER_KICK : []), ...FEED_CUT];
-  await writeBytes(Uint8Array.from(bytes), floor);
+  await writeBytes(Uint8Array.from(bytes));
 }
 
 // Drawer only (no print) — e.g. a "no sale" open.
-export async function openDrawer(floor) {
-  await writeBytes(Uint8Array.from([...INIT, ...DRAWER_KICK]), floor);
+export async function openDrawer() {
+  await writeBytes(Uint8Array.from([...INIT, ...DRAWER_KICK]));
 }

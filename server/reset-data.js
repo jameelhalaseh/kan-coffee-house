@@ -3,7 +3,7 @@
 //
 // DESTRUCTIVE. Guarded — must pass CONFIRM_WIPE=YES or it refuses to run.
 //   Local:  CONFIRM_WIPE=YES npm run reset:data
-//   Heroku: heroku run -a <app> "CONFIRM_WIPE=YES npm run reset:data"
+//   Docker: docker compose exec -e CONFIRM_WIPE=YES app npm run reset:data
 //
 // Store-aware: truncates orders_<key> for every store in server/floors.js. Invoice numbers
 // reset automatically (gap-reuse scans the now-empty table).

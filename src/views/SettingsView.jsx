@@ -288,8 +288,8 @@ function CategoryImageModal({ cat, onClose, notify }) {
           <button onClick={onClose} style={{ ...S.btnGhost, padding: '13px' }}>{ARABIC ? 'إلغاء' : 'Cancel'}</button>
         </div>
 
-        {/* Only offered when there is an upload to remove — removing it falls back to the
-            bundled artwork, or to the letter badge when the category has none. */}
+        {/* Only offered when there is an upload to remove — removing it falls the tile back
+            to its coloured letter badge. */}
         {uploaded && (
           <button onClick={remove} disabled={busy} style={{ ...S.btnGhost, padding: '11px', color: C.red }}>
             {ARABIC ? '🗑 إزالة الصورة المرفوعة' : '🗑 Remove uploaded image'}

@@ -24,7 +24,7 @@ import { C, S } from '../theme';
 import { ARABIC, DEFAULT_FLOOR, PAY_KEYS, payLabel } from '../client.config';
 import { printReceipt, buildReceipt } from '../receipt';
 import {
-  serialSupported, getPrintMode, isConnected, connectPrinter, printReceiptHTML, openDrawer,
+  serialSupported, isConnected, connectPrinter, printReceiptHTML, openDrawer,
 } from '../lib/thermalPrinter';
 // One bill renderer, shared with the post-payment popup in SalesView — see BillPaper.jsx.
 import BillPaper, { PAPER } from './BillPaper';
@@ -44,7 +44,7 @@ function ReceiptModal({ receipt: r, isAdmin, onClose, onChanged, onGone, notify 
   // worth a polling loop.
   const [canSerial, setCanSerial] = useState(false);
   useEffect(() => {
-    try { setCanSerial(serialSupported() || getPrintMode(FLOOR) === 'bridge'); } catch (_) { setCanSerial(false); }
+    try { setCanSerial(serialSupported()); } catch (_) { setCanSerial(false); }
   }, []);
 
   const sale = {
@@ -60,9 +60,9 @@ function ReceiptModal({ receipt: r, isAdmin, onClose, onChanged, onGone, notify 
     setBusy(true);
     try {
       if (canSerial) {
-        if (!isConnected(FLOOR)) await connectPrinter(FLOOR);
+        if (!isConnected()) await connectPrinter();
         const { body, css } = buildReceipt(sale);
-        await printReceiptHTML(body, css, { kick: true, floor: FLOOR });
+        await printReceiptHTML(body, css, { kick: true });
         onClose();
         return;
       }
@@ -80,8 +80,8 @@ function ReceiptModal({ receipt: r, isAdmin, onClose, onChanged, onGone, notify 
   const goGreen = async () => {
     setBusy(true);
     try {
-      if (!isConnected(FLOOR)) await connectPrinter(FLOOR);
-      await openDrawer(FLOOR);
+      if (!isConnected()) await connectPrinter();
+      await openDrawer();
       onClose();
     } catch (_) {
       notify(ARABIC ? 'تعذّر فتح الدرج' : 'Could not open the drawer', 'red');

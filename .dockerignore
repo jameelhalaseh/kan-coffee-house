@@ -7,9 +7,8 @@ dist-electron
 .env.production
 npm-debug.log*
 *.md
-!README_DEMO.md
+!README.md
 docs
-heroku
 graphify-out
 .planning
 .claude

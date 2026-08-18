@@ -15,6 +15,5 @@ module.exports = {
     '!server/test/**',
     '!server/migrations/**',
     '!server/seed-*.js',
-    '!server/server.js',
   ],
 };

@@ -317,4 +317,4 @@ cd ../ && docker compose up -d --build
 ```
 
 The lighter loop for day-to-day work is still `npm run db:up && npm run server`
-(see `README_DEMO.md`).
+(see `README.md`).

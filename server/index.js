@@ -1,4 +1,4 @@
-// CashierPOS API server (Heroku). Serves the /api/* JSON API and the static React
+// Kan Coffee House POS - API server. Serves the /api/* JSON API and the static React
 // build from one dyno. Replaces the Supabase REST/anon-key model — the DB is reached
 // only through this server, which authorizes every request server-side.
 try { require('dotenv').config(); } catch (_) { /* dotenv optional in production */ }
@@ -55,17 +55,6 @@ app.use((req, _res, next) => {
   next();
 });
 
-// The one non-self origin the page may call: the local ESC/POS print bridge. Configurable so
-// a different port is a config change rather than a CSP edit, and so a shop that prints over
-// Web Serial (Kan) can set PRINT_BRIDGE_ORIGIN= to remove the grant entirely.
-const PRINT_BRIDGE = (() => {
-  const raw = process.env.PRINT_BRIDGE_ORIGIN;
-  if (raw !== undefined) {
-    return String(raw).split(',').map((x) => x.trim()).filter(Boolean);
-  }
-  return ['http://localhost:9110', 'http://127.0.0.1:9110'];
-})();
-
 // CSP — the build is self-hosted and loads no external scripts.
 // script-src is 'self' ONLY — no 'unsafe-inline'. The build sets
 // INLINE_RUNTIME_CHUNK=false (package.json + Dockerfile), so CRA emits its runtime as a
@@ -91,13 +80,11 @@ app.use(helmet({
       // letter badges. The same applies to the upload preview, which reads a local file.
       'img-src': ["'self'", 'data:', 'blob:', 'https:'],
       'font-src': ["'self'", 'data:', 'https://fonts.gstatic.com'],
-      // The local print bridge, pinned to ONE origin instead of the whole of localhost.
-      // `http://localhost:*` let the page reach every port on the operator's own machine —
-      // harmless while nothing can inject script here, but it is a wide grant for a feature
-      // that talks to exactly one daemon. src/lib/thermalPrinter.js defaults to :9110; a shop
-      // that moves the bridge sets PRINT_BRIDGE_ORIGIN to match.
-      // (Kan prints over Web Serial, which is not a fetch and needs no connect-src at all.)
-      'connect-src': ["'self'", 'https://*.sentry.io', 'https://*.ingest.sentry.io', ...PRINT_BRIDGE],
+      // Self and Sentry, nothing else. This used to allow `http://localhost:*` for the local
+      // print-bridge daemon — every port on the operator's own machine — and then one pinned
+      // bridge origin. Both are gone with the bridge itself: Kan prints over Web Serial, which
+      // is not a fetch and needs no connect-src grant at all.
+      'connect-src': ["'self'", 'https://*.sentry.io', 'https://*.ingest.sentry.io'],
       'object-src': ["'none'"],
       'base-uri': ["'self'"],
       'frame-ancestors': ["'none'"],
@@ -132,7 +119,8 @@ app.use(requestLogger);
 // The cost is that a shop's tills share one public IP and therefore one budget, so the
 // numbers below are sized for a whole store rather than a single terminal.
 //
-// `trust proxy` is 1 (Caddy/Heroku), so req.ip is the real client, not the proxy.
+// req.ip comes from the socket unless TRUST_PROXY names a proxy to believe (see the top of
+// this file) - so this key cannot be chosen by the caller.
 const limiterKey = (req) => {
   // IPv6 callers are bucketed by /64: one bucket per address would make the limit free to
   // evade, since a single host is routinely handed a whole /64.
@@ -247,7 +235,7 @@ app.get('/manifest.json', (_req, res) => {
   res.json(manifest());
 });
 
-// ── Static React build (optional — present after `npm run build` / heroku-postbuild)
+// ── Static React build (optional — present after `npm run build`)
 const buildDir = path.join(__dirname, '..', 'build');
 const buildIndex = path.join(buildDir, 'index.html');
 if (fs.existsSync(buildIndex)) {

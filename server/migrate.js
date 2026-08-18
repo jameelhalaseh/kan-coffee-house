@@ -1,6 +1,6 @@
 // Apply server/migrations/*.sql in filename order against DATABASE_URL.
 //   npm run migrate                (locally, with .env)
-//   heroku run npm run migrate -a <app>
+//   docker compose exec app npm run migrate
 //   npm run migrate -- --status    (show what is applied / pending, change nothing)
 //
 // WHY THERE IS A LEDGER NOW

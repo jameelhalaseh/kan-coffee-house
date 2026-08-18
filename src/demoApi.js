@@ -2,7 +2,7 @@
 // In-browser MOCK API for the GitHub Pages preview (no backend/DB).
 // Activated only when REACT_APP_DEMO === '1' (see src/api.js). Implements the same
 // contract as the real api.js (get/post/put/patch/del + token helpers), backed by
-// localStorage so data survives reloads. The real Heroku build never imports this.
+// localStorage so data survives reloads. A real build never imports this.
 //
 // Demo logins — ANY PASSWORD IS ACCEPTED (see the auth branch below):
 //   owner / anything   ·   manager / anything   ·   barista1 / anything

@@ -1,8 +1,18 @@
 // Resolves the artwork for a category tile, in priority order:
 //
 //   1. the shop's own uploaded image   (GET /api/category-images/:cat)
-//   2. the bundled artwork             (src/assets/categories)
-//   3. nothing — the caller draws the coloured letter badge
+//   2. nothing — the caller draws the coloured letter badge
+//
+// There used to be a middle tier: thirteen PNGs bundled into the JS build. They were the
+// LIQUOR shop's - arak, vodka, champagne, beer - and they were keyed by category name, so not
+// one of them could ever match a Kan shelf (Hot Coffee, Cold Kan, Tea & Herbs...). 652kB of
+// another shop's bottles shipped in this bundle and were precached by the service worker to
+// answer a question that never gets asked. Kan's own six category images are committed under
+// server/seed-images/categories/ and seeded into the database, so tier 1 covers every shelf
+// the shop actually has.
+//
+// A category with no artwork remains a supported state, not a gap: the list is user-editable,
+// so a new one WILL appear without a picture and must fall back to the letter badge.
 //
 // WHY UPLOADED IMAGES ARE FETCHED AS BLOBS RATHER THAN SET AS AN <img src>
 // The endpoint requires a session, and an <img> tag cannot carry an Authorization header —
@@ -14,7 +24,6 @@
 // Object URLs are cached for the life of the page and revoked when a category's image is
 // replaced, so switching screens does not leak one per render.
 import api from './api';
-import { categoryImage as bundledImage } from './assets/categories';
 
 const objectUrls = new Map();   // cat (lowercased) → blob: URL
 let manifest = new Map();       // cat (lowercased) → updated_at, i.e. "who has an upload"
@@ -39,7 +48,7 @@ async function fetchOne(cat) {
     notify();
   } catch (_) {
     // A missing or unreadable upload is not an error worth surfacing — the tile simply
-    // falls back to the bundled artwork or the letter badge.
+    // falls back to the coloured letter badge.
   }
 }
 
@@ -53,7 +62,7 @@ export async function loadCategoryArt() {
     notify();
     await Promise.all([...manifest.keys()].map(fetchOne));
   } catch (_) {
-    loaded = true;   // offline or unauthorised: fall back to bundled artwork silently
+    loaded = true;   // offline or unauthorised: fall back to letter badges silently
     notify();
   }
 }
@@ -71,11 +80,10 @@ export async function refreshCategoryArt(cat) {
 
 // The single lookup every tile goes through.
 export function artFor(cat) {
-  const k = key(cat);
-  return objectUrls.get(k) || bundledImage(k) || null;
+  return objectUrls.get(key(cat)) || null;
 }
 
-// True when this category is showing the shop's own upload rather than a bundled image.
+// True when this category has artwork of its own rather than falling back to the letter badge.
 export const hasUpload = (cat) => manifest.has(key(cat));
 export const artLoaded = () => loaded;
 
