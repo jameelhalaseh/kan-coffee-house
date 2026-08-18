@@ -1,0 +1,138 @@
+================================================================================
+PRODUCT ARTWORK — WHICH SOURCE FILE BECAME WHICH PRODUCT
+Kan Coffee House  ·  uploaded 2026-08-18  ·  43 of 44 products
+================================================================================
+
+WHY THIS FILE EXISTS
+
+The artwork lives in the `product_images` table (migration 0012), which is bytes in
+Postgres — so it is not in this repository and a `git clone` does not bring it.
+The generated files themselves arrived with names like
+
+    ChatGPT Image Aug 18, 2026, 08_40_06 AM (7).png
+
+which say nothing about which drink is inside. Every mapping below was established
+by LOOKING at each image; nothing about the filenames or their order encodes it.
+That identification is the part worth writing down: without it, restoring the
+artwork means redoing the visual matching from scratch.
+
+THREE THINGS THAT MADE THE FILENAMES UNTRUSTWORTHY
+
+  1. The download timestamps are NOT batch order. The 08_39_42 group is prompt
+     batch 2; the 08_39_51 group is batch 1.
+  2. Order WITHIN a group is not prompt order either. In the 08_39_51 group,
+     image (6) is the espresso macchiato and image (2) is the Spanish latte.
+  3. The 08_40_17 group is a byte-for-byte duplicate of 08_40_06 — the same batch
+     downloaded twice, not a fifth batch.
+
+--------------------------------------------------------------------------------
+SOURCES  (all under ~/Downloads as delivered)
+--------------------------------------------------------------------------------
+
+  [B]  ChatGPT Image Aug 18, 2026, 08_39_51 AM (n).png   = prompt batch 1
+  [A]  ChatGPT Image Aug 18, 2026, 08_39_42 AM (n).png   = prompt batch 2
+  [C]  ChatGPT Image Aug 18, 2026, 08_40_06 AM (n).png   = prompt batch 4
+  [Z3] Kan-Coffee-Batch-3-21-to-30.zip                   = prompt batch 3, already SKU-named
+  [Z5] Kan-Coffee-Batch-5-41-to-44.zip                   = prompt batch 5, already SKU-named
+
+--------------------------------------------------------------------------------
+MAPPING
+--------------------------------------------------------------------------------
+
+  SKU        PRODUCT                      SOURCE
+  KC-HC-01   Espresso                     [B] (1)
+  KC-HC-02   Espresso Macchiato           [B] (6)     <- not (2); order is scrambled
+  KC-HC-03   Lungo                        [B] (3)     <- see UNCERTAIN below
+  KC-HC-04   Americano                    [B] (4)     <- see UNCERTAIN below
+  KC-HC-05   V60 / Chemex                 [B] (5)
+  KC-HC-06   Cappuccino                   [B] (7)
+  KC-HC-07   Cafe Latte                   [B] (8)
+  KC-HC-08   Flat White                   [B] (9)
+  KC-HC-09   White / Dark Mocha  (hot)    [B] (10)
+  KC-HC-10   Spanish Latte       (hot)    [B] (2)     <- not (10)
+  KC-HC-11   Caramel Macchiato   (hot)    [A] (1)
+  KC-HC-12   Cortado                      [A] (2)
+  KC-HC-13   Turkish                      [A] (3)
+  KC-CC-01   Iced Latte                   [A] (4)
+  KC-CC-02   Cold Brew                    [A] (5)
+  KC-CC-03   Cold Brew Bottle             [A] (6)
+  KC-CC-04   Iced Americano               [A] (7)
+  KC-CC-05   Dark / White Mocha  (iced)   [A] (8)
+  KC-CC-06   Spanish Latte       (iced)   [A] (9)
+  KC-CC-07   Caramel Macchiato   (iced)   [A] (10)
+  KC-CC-08   Frappuccino                  [Z3] KC-CC-08-frappuccino.png
+  KC-TH-01   Black / Green                [Z3] KC-TH-01-black-green-tea.png
+  KC-TH-02   Persian Tea                  [Z3] KC-TH-02-persian-tea.png
+  KC-TH-03   Beduin Tea                   [Z3] KC-TH-03-beduin-tea.png
+  KC-TH-04   Chai Latte                   [Z3] KC-TH-04-chai-latte.png
+  KC-TH-05   Yemeni Tea                   [Z3] KC-TH-05-yemeni-tea.png  <- QUESTIONABLE
+  KC-TH-06   Moroccan Tea                 [Z3] KC-TH-06-moroccan-tea.png
+  KC-TH-07   Ask About Herbs              [Z3] KC-TH-07-herbal-tea.png
+  KC-HK-01   Hot Chocolate                [Z3] KC-HK-01-hot-chocolate.png
+  KC-HK-02   Hot Lotus                    [Z3] KC-HK-02-hot-lotus.png
+  KC-HK-03   Hot Pistachio                [C] (1)
+  KC-CK-01   Mojito                       [C] (2)
+  KC-CK-02   Iced Tea                     [C] (3)
+  KC-CK-03   Smoothies                    [C] (4)
+  KC-CK-04   Fresh Juice                  [C] (5)
+  KC-CK-05   Matcha                       *** NO IMAGE — NEVER GENERATED ***
+  KC-CK-06   Summer Passion               [C] (7)
+  KC-SP-01   Hot Arabian Latte            [C] (8)
+  KC-SP-02   Hot Spanilla                 [C] (9)
+  KC-SP-03   Iced Arabian Latte           [C] (10)
+  KC-SP-04   Iced Spanilla                [Z5] KC-SP-04-iced-spanilla.png
+  KC-SP-05   Pomberries Smoothie          [Z5] KC-SP-05-pomberries-smoothie.png
+  KC-SP-06   Matcha (Strawberry-Mango)    [Z5] KC-SP-06-matcha-strawberry-mango.png  <- QUESTIONABLE
+  KC-SP-07   Affogato                     [Z5] KC-SP-07-affogato.png
+
+--------------------------------------------------------------------------------
+MISSING
+--------------------------------------------------------------------------------
+
+KC-CK-05 (Matcha, iced) has no picture. Slot (6) of the 08_40_06 group is a
+byte-identical copy of slot (1), Hot Pistachio — so the matcha was never generated
+and a duplicate was downloaded in its place. That is why 54 delivered files held
+only 43 distinct images.
+
+Its prompt is #36 in docs/product-image-prompts.txt. Generate one transparent PNG
+and upload it at Inventory -> Matcha -> Product picture.
+
+--------------------------------------------------------------------------------
+UNCERTAIN — worth a second pair of eyes
+--------------------------------------------------------------------------------
+
+KC-HC-03 Lungo vs KC-HC-04 Americano
+  Both are black coffee in the same stone cup and are genuinely indistinguishable
+  at tile size. They were assigned in prompt order. If they are swapped, swapping
+  them back is two uploads — and nothing downstream depends on it.
+
+KC-TH-05 Yemeni Tea
+  The image shows a cream-topped drink with a dark chocolate drizzle, which reads
+  as a mocha rather than the pale milky spiced tea the prompt asked for. The file
+  came SKU-named inside the batch-3 zip, so this is a generation/naming issue at
+  source, not a mapping error. Worth regenerating.
+
+KC-SP-06 Matcha (Strawberry-Mango)
+  Correct drink and correct three layers, but served in a ceramic mug while every
+  other cold drink in the set is a tall glass. It breaks the set's consistency,
+  which is the one thing the prompt document says matters most in a grid.
+
+--------------------------------------------------------------------------------
+HOW THESE WERE PROCESSED
+--------------------------------------------------------------------------------
+
+Sources were 1254x1254 (loose) and 1024x1024 (zips), all RGBA with real
+transparency — verified by decoding the alpha channel, not by eye: transparent
+corners and 49-90% fully transparent pixels on every file.
+
+Each was then put through the SAME pipeline src/imageNormalize.js applies in the
+browser, because the server accepts nothing else (exactly 512x512 PNG):
+
+    trim to the alpha bounding box, ignoring alpha < 32 as halo
+    scale the subject to 440px on its longest side
+    centre it on a 512x512 fully transparent canvas
+    export PNG
+
+then PUT to /api/product-images/:id as base64. Result: 43 rows, ~12MB total in
+Postgres, every stored file re-verified as a valid 512x512 PNG with its
+transparency intact.
