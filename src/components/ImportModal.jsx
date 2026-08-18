@@ -113,7 +113,7 @@ function ImportModal({ onClose, onImported, notify }) {
               </div>
             )}
 
-            <Field label={ARABIC ? 'الصفوف ذات الباركود الموجود' : 'Rows whose barcode already exists'}>
+            <Field label={ARABIC ? 'الصفوف ذات الرمز الموجود' : 'Rows whose SKU already exists'}>
               <div style={{ display: 'flex', gap: 8 }}>
                 {[['upsert', ARABIC ? 'تحديث' : 'Update them'], ['insert', ARABIC ? 'رفض الملف' : 'Reject the file']].map(([v, lbl]) => (
                   <button key={v} type="button" onClick={() => setMode(v)} style={{ ...S.btnGhost, flex: 1, padding: '10px', ...(mode === v ? { background: C.blue, color: '#fff', borderColor: C.blue } : {}) }}>{lbl}</button>

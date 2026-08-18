@@ -232,8 +232,7 @@ function SalesView({ user, notify }) {
   };
 
   // Browse model: pick a category first, then its items. Searching cuts across every
-  // category (you shouldn't have to guess the shelf to find a bottle), and a barcode scan
-  // never touches this — it resolves straight to the product.
+  // category (you shouldn't have to guess the shelf to find a drink).
   const q = scan.trim();
   const searching = q.length > 0;
   const catCards = categoryCards(products);
@@ -260,7 +259,7 @@ function SalesView({ user, notify }) {
 
   return (
     <div dir="ltr" style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
-      {/* Left: scan + tap-to-add product tiles */}
+      {/* Left: search + tap-to-add product tiles */}
       <div dir={ARABIC ? 'rtl' : 'ltr'} style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 12 }}>
         <div style={{ display: 'flex', gap: 10 }}>
           <div style={{ position: 'relative', flex: 1, minWidth: 0 }}>
@@ -426,7 +425,7 @@ function SalesView({ user, notify }) {
           {!cart.length && (
             <div style={{ color: C.dim, fontSize: 15, padding: '34px 0', textAlign: 'center' }}>
               <div style={{ fontSize: 44, marginBottom: 10, opacity: .5 }}>🛒</div>
-              {ARABIC ? 'اضغط أو امسح منتجاً للبدء' : 'Tap or scan a product to start'}
+              {ARABIC ? 'اضغط على منتج للبدء' : 'Tap a product to start'}
             </div>
           )}
           {/* A cart line reads like a receipt line: NAME on the left, what it costs on the

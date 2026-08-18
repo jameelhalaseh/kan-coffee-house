@@ -192,7 +192,7 @@ function ProductModal({ initial, onClose, onSaved, notify, editing, isAdmin }) {
     <Overlay onClose={onClose}>
       <form onSubmit={save} style={{ ...S.card, width: 360, display: 'flex', flexDirection: 'column', gap: 10 }}>
         <div style={{ fontWeight: 800, fontSize: 18 }}>{editing ? (ARABIC ? 'تعديل منتج' : 'Edit product') : (ARABIC ? 'منتج جديد' : 'New product')}</div>
-        <Field label={ARABIC ? 'الباركود' : 'Barcode'}><input style={S.input} value={barcode} onChange={(e) => setBarcode(e.target.value)} /></Field>
+        <Field label={ARABIC ? 'الرمز (SKU)' : 'SKU'}><input style={S.input} value={barcode} onChange={(e) => setBarcode(e.target.value)} /></Field>
         <Field label={ARABIC ? 'الاسم' : 'Name'}><input ref={nameRef} style={S.input} value={name} onChange={(e) => setName(e.target.value)} /></Field>
         {/* Size, not weight. The presets are the shelf's common bottles; the box below takes
             anything else (1.75L, 200ml, a 6-pack) because an off-licence always has one. Blank
