@@ -16,7 +16,6 @@ import { beep } from '../sound';
 import { Overlay, NumPad, qtyBtn } from '../components/ui';
 import { categoryCards, inCat, CategoryGrid, CategoryHeader, catTitle, useProductArt } from '../components/categories';
 import { ensureProductArt } from '../productArt';
-import ProductModal from '../components/ProductModal';
 
 
 // ── Category browsing (shared by Sales and Inventory) ─────────────────────────
@@ -35,14 +34,12 @@ function SalesView({ user, notify }) {
   // ONE query box, not two. There used to be a scan field and a separate search field
   // stacked on top of each other doing overlapping jobs, and the scanner's target was the
   // one that didn't say "search" — new staff picked wrong daily. Now: typing filters the
-  // tiles live, Enter treats what you typed as a barcode. A scanner bursts characters and
-  // sends Enter, so it lands on the barcode path without anyone aiming at anything.
+  // tiles live; Enter adds the item when the search has narrowed to one.
   const [scan, setScan] = useState('');
   // null = browsing the category grid; 'all' or a category name = viewing that shelf's items.
   const [cat, setCat] = useState(null);
   const [pay, setPay] = useState('cash');
   const [tendered, setTendered] = useState('');
-  const [newProduct, setNewProduct] = useState(null); // {barcode} → modal
   const [editLine, setEditLine] = useState(null);      // cart line → qty/price keypad
   const [quickItem, setQuickItem] = useState(false);   // open-price misc item modal
   const [pickDiscount, setPickDiscount] = useState(false);   // 🏷 Discount → which line?
@@ -98,7 +95,7 @@ function SalesView({ user, notify }) {
     setCart((prev) => {
       const i = prev.findIndex((l) => l.id === p.id);
       if (i >= 0) { const next = [...prev]; next[i] = { ...next[i], qty: next[i].qty + qty }; return next; }
-      return [...prev, { id: p.id, barcode: p.barcode, name: p.name, price: Number(p.price) || 0, qty, unit: p.unit || 'ea', size: p.size || null, disc: 0, disc_note: '' }];
+      return [...prev, { id: p.id, barcode: p.barcode, name: p.name, price: Number(p.price) || 0, qty, unit: p.unit || 'ea', size: p.size || null, disc: 0, disc_note: '', disc_pct: 0 }];
     });
     beep(true);
     flash({ name: p.name, price: Number(p.price) || 0, qty });
@@ -111,51 +108,19 @@ function SalesView({ user, notify }) {
     addToCart(p); refocus();
   };
 
-  const onScan = async (code) => {
-    const c = String(code || '').trim();
-    if (!c) return;
-    setScan('');
-    const local = products.find((p) => p.barcode && p.barcode === c);
-    if (local) { addProduct(local); return; }
-    try {
-      const p = await api.get('/products/barcode/' + encodeURIComponent(c));
-      setProducts((prev) => (prev.some((x) => x.id === p.id) ? prev : [...prev, p]));
-      addProduct(p);
-    } catch (ex) {
-      if (ex.status === 404) { beep(false); setNewProduct({ barcode: c }); }
-      else { beep(false); notify(ARABIC ? 'تعذّر البحث' : 'Lookup failed', 'red'); }
-    }
-  };
-
-  // ── Scanner hardening ───────────────────────────────────────────────────────
-  // USB barcode scanners are keyboards: they burst characters fast and end with Enter.
-  // If focus wandered off the scan input (cashier tapped a tile, closed a modal…), we
-  // still capture the burst globally: keystrokes <100ms apart accumulate; Enter fires
-  // the scan. Slow (human) typing outside an input is ignored, as is typing in inputs.
-  const onScanRef = useRef(null);
-  onScanRef.current = onScan;
-  const modalOpenRef = useRef(false);
-  modalOpenRef.current = !!(newProduct || editLine || quickItem || weighItem || showHeld || receipt || pickDiscount);
-  useEffect(() => {
-    let buf = '';
-    let lastTs = 0;
-    const onKeyDown = (e) => {
-      if (modalOpenRef.current) return;
-      const el = document.activeElement;
-      if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) return;
-      const now = Date.now();
-      if (now - lastTs > 100) buf = '';       // gap too slow → human keys, restart buffer
-      lastTs = now;
-      if (e.key === 'Enter') {
-        if (buf.length >= 4) { e.preventDefault(); onScanRef.current(buf); }
-        buf = '';
-      } else if (e.key.length === 1) {
-        buf += e.key;
-      }
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, []);
+  // NO BARCODE SCANNER. Kan does not have one - recorded at intake - so everything that only
+  // existed to serve one is gone:
+  //   * the global keystroke-burst capture, which treated fast typing ANYWHERE on the page as
+  //     a scan and fired it. Without a scanner that is not a feature, it is a way for a
+  //     stray keyboard to ring items up.
+  //   * Enter meaning "treat what I typed as a barcode", and the lookup behind it.
+  //   * the quick-add modal that opened when an unknown barcode was scanned. It was reachable
+  //     only from that path; off-menu items go through + Quick item, and real catalogue
+  //     products through Inventory -> + Product.
+  //
+  // The box above the tiles is now a plain name search. The barcode COLUMN stays: for this
+  // shop it holds internal SKUs (KC-HC-01) that the seed upserts on and the CSV import keys
+  // to, and nothing about not owning a scanner makes those go away.
 
   const setQty = (id, qty) => setCart((prev) => prev.flatMap((l) => (l.id === id ? (qty <= 0 ? [] : [{ ...l, qty }]) : [l])));
   const setLine = (id, patch) => setCart((prev) => prev.map((l) => (l.id === id ? { ...l, ...patch } : l)));
@@ -302,10 +267,13 @@ function SalesView({ user, notify }) {
             <input ref={scanRef} style={{ ...S.input, width: '100%', fontSize: 18, padding: '14px', paddingInlineEnd: scan ? 44 : 14, letterSpacing: 1 }}
               value={scan} onChange={(e) => setScan(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === 'Enter') onScan(scan);
+                // Enter adds the product once the search has narrowed to exactly one, so a
+                // keyboard user is not forced to reach for the tile. It no longer means
+                // "treat this as a barcode" - there is nothing to scan with.
+                if (e.key === 'Enter' && tiles.length === 1) { addProduct(tiles[0]); setScan(''); }
                 if (e.key === 'Escape') setScan('');
               }}
-              placeholder={ARABIC ? '🔍 امسح الباركود أو ابحث بالاسم' : '🔍 Scan barcode or search by name'} inputMode="search" />
+              placeholder={ARABIC ? '🔍 ابحث بالاسم' : '🔍 Search by name'} inputMode="search" />
             {/* Clearing by hand is otherwise a long press on Backspace mid-queue. */}
             {scan && (
               <button onClick={() => { setScan(''); refocus(); }} aria-label={ARABIC ? 'مسح' : 'Clear'}
@@ -490,7 +458,7 @@ function SalesView({ user, notify }) {
                   discount unverifiable at the counter. */}
               {Number(l.disc) > 0 && (
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: C.green, fontWeight: 700, marginTop: 2 }}>
-                  <span>{ARABIC ? 'خصم' : 'Discount'}</span>
+                  <span>{ARABIC ? 'خصم' : 'Discount'}{Number(l.disc_pct) > 0 ? ` ${Number(l.disc_pct)}%` : ''}</span>
                   <span style={{ fontVariantNumeric: 'tabular-nums' }}>
                     <span style={{ color: C.dim, textDecoration: 'line-through', marginInlineEnd: 6 }}>{amount(l.price * l.qty)}</span>
                     − {amount(l.disc)}
@@ -601,11 +569,6 @@ function SalesView({ user, notify }) {
         </div>
       </div>
 
-      {newProduct && (
-        <ProductModal initial={newProduct} notify={notify}
-          onClose={() => { setNewProduct(null); scanRef.current && scanRef.current.focus(); }}
-          onSaved={(p) => { setProducts((prev) => [...prev, p]); addToCart(p); setNewProduct(null); scanRef.current && scanRef.current.focus(); }} />
-      )}
 
       {showHeld && (
         <Overlay onClose={() => setShowHeld(false)}>
@@ -628,7 +591,7 @@ function SalesView({ user, notify }) {
       {editLine && (
         <LineEditModal line={editLine} initialField={editField}
           onClose={() => setEditLine(null)}
-          onApply={(qty, price, disc, disc_note) => { if (qty <= 0) removeLine(editLine.id); else setLine(editLine.id, { qty, price, disc, disc_note }); setEditLine(null); }}
+          onApply={(qty, price, disc, disc_note, disc_pct) => { if (qty <= 0) removeLine(editLine.id); else setLine(editLine.id, { qty, price, disc, disc_note, disc_pct }); setEditLine(null); }}
           onRemove={() => { removeLine(editLine.id); setEditLine(null); }} />
       )}
       {pickDiscount && (
@@ -636,7 +599,7 @@ function SalesView({ user, notify }) {
           onClose={() => { setPickDiscount(false); refocus(); }}
           onPick={(l) => { setPickDiscount(false); setEditField('disc'); setEditLine(l); }}
           onClearAll={() => {
-            setCart((prev) => prev.map((l) => ({ ...l, disc: 0, disc_note: '' })));
+            setCart((prev) => prev.map((l) => ({ ...l, disc: 0, disc_note: '', disc_pct: 0 })));
             setPickDiscount(false); refocus();
           }} />
       )}
@@ -792,24 +755,39 @@ function DiscountPicker({ cart, onClose, onPick, onClearAll }) {
 // to — the receipt would show a lump sum against nothing in particular, and a manager
 // reviewing it a week later could not tell what was actually agreed.
 //
-// It is an AMOUNT, not a percentage, because that is how the counter bargains. The keypad
-// takes dinars directly, so nothing is converted in anyone's head.
+// It is a PERCENTAGE. The counter asked for percentages rather than dinars off, so the keypad
+// takes 0-100 and the money comes out of it: amount = line total x pct / 100, rounded to the
+// same three decimals as every other figure on the bill.
+//
+// What is STORED per line is still `disc`, the money. Everything downstream reads that - the
+// printed receipt, the customer display, the Discounts report, the server's own
+// discount_exceeds_line check - and none of it should have to learn a second representation of
+// the same thing. `disc_pct` rides alongside purely so the till and the bill can SAY "10%"
+// instead of making someone divide in their head.
 function LineEditModal({ line, onClose, onApply, onRemove, initialField = 'qty' }) {
   const [field, setField] = useState(initialField);
   const [qty, setQty] = useState(String(line.qty));
   const [price, setPrice] = useState(String(line.price));
-  const [disc, setDisc] = useState(line.disc ? String(line.disc) : '');
+  // A parked cart from before this change has `disc` but no `disc_pct`. Derive the percentage
+  // back out of the money so an old line opens showing what it actually is, rather than 0.
+  const initialPct = line.disc_pct != null && line.disc_pct !== ''
+    ? String(line.disc_pct)
+    : (Number(line.disc) > 0 && Number(line.price) * Number(line.qty) > 0
+      ? String(r3(Number(line.disc) / (Number(line.price) * Number(line.qty)) * 100))
+      : '');
+  const [pct, setPct] = useState(initialPct);
   const [note, setNote] = useState(line.disc_note || '');
-  const set = field === 'qty' ? setQty : field === 'price' ? setPrice : setDisc;
+  const set = field === 'qty' ? setQty : field === 'price' ? setPrice : setPct;
   const onKey = (ch) => set((v) => (ch === '.' && v.includes('.') ? v : (v === '0' && ch !== '.' ? ch : v + ch)));
 
   const lineAmount = (Number(qty) || 0) * (Number(price) || 0);
-  const wanted = Number(disc) || 0;
-  // A discount bigger than the line would make the line negative — money out of the drawer
-  // with an invoice authorising it. The server refuses it too (discount_exceeds_line); this
-  // is the half that tells the cashier BEFORE they save.
-  const tooBig = wanted > lineAmount + 0.0005;
-  const finalDisc = tooBig ? 0 : wanted;
+  const wantedPct = Number(pct) || 0;
+  // Over 100% would make the line negative - money out of the drawer with an invoice
+  // authorising it. The server refuses the resulting amount too
+  // (discount_exceeds_line); this is the half that tells the cashier BEFORE they save.
+  const tooBig = wantedPct > 100.0005;
+  const finalPct = tooBig ? 0 : wantedPct;
+  const finalDisc = r3(lineAmount * finalPct / 100);
 
   const tab = (name, label, val) => (
     <button type="button" onClick={() => setField(name)} style={{ flex: 1, padding: '12px', borderRadius: 8, border: `1px solid ${field === name ? C.accent : C.line}`, background: field === name ? C.accent : C.panel2, color: field === name ? C.accentText : C.text, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
@@ -825,7 +803,7 @@ function LineEditModal({ line, onClose, onApply, onRemove, initialField = 'qty' 
         <div style={{ display: 'flex', gap: 8 }}>
           {tab('qty', ARABIC ? 'الكمية' : 'Qty', qty)}
           {tab('price', ARABIC ? 'السعر' : 'Price', price)}
-          {tab('disc', ARABIC ? 'خصم (د.أ)' : 'Disc (JOD)', disc)}
+          {tab('disc', ARABIC ? 'خصم (%)' : 'Disc (%)', pct ? pct + '%' : '')}
         </div>
         {/* What the line will actually come to, updated as they type. The cashier is quoting
             this number to a customer standing in front of them. */}
@@ -837,7 +815,13 @@ function LineEditModal({ line, onClose, onApply, onRemove, initialField = 'qty' 
         </div>
         {tooBig && (
           <div style={{ color: C.red, fontSize: 13, fontWeight: 700 }}>
-            {ARABIC ? `الخصم أكبر من قيمة السطر (${money(lineAmount)})` : `Discount is more than the line (${money(lineAmount)})`}
+            {ARABIC ? 'الخصم لا يمكن أن يتجاوز 100%' : 'A discount cannot be more than 100%'}
+          </div>
+        )}
+        {/* The percentage in money, because that is the number being quoted out loud. */}
+        {finalPct > 0 && !tooBig && (
+          <div style={{ fontSize: 13, color: C.dim }}>
+            {finalPct}% {ARABIC ? 'من' : 'of'} {money(lineAmount)} = <b style={{ color: C.text }}>−{money(finalDisc)}</b>
           </div>
         )}
         {/* WHY the discount was given. It is deliberately NOT printed on the customer's bill
@@ -851,7 +835,7 @@ function LineEditModal({ line, onClose, onApply, onRemove, initialField = 'qty' 
         )}
         <NumPad onKey={onKey} onClear={() => set('')} onBackspace={() => set((v) => v.slice(0, -1))} />
         <div style={{ display: 'flex', gap: 8 }}>
-          <button onClick={() => onApply(Number(qty) || 0, Number(price) || 0, finalDisc, finalDisc > 0 ? note.trim() : '')} disabled={tooBig}
+          <button onClick={() => onApply(Number(qty) || 0, Number(price) || 0, finalDisc, finalDisc > 0 ? note.trim() : '', finalPct)} disabled={tooBig}
             style={{ ...S.btn, flex: 1, padding: '14px', fontSize: 16, opacity: tooBig ? 0.5 : 1 }}>{ARABIC ? 'حفظ' : 'Save'}</button>
           <button onClick={onRemove} style={{ ...S.btnGhost, padding: '14px', color: C.red }}>{ARABIC ? 'حذف' : 'Remove'}</button>
         </div>

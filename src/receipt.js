@@ -29,7 +29,7 @@ function buildReceipt(sale) {
     // it. On a 280px roll that costs one short line and is the difference between a customer
     // being able to check the discount they asked for and having to take it on trust.
     const off = disc > 0
-      ? `<div class="qty">${(price * qty).toFixed(3)} − ${disc.toFixed(3)} ${ARABIC ? 'خصم' : 'discount'}</div>`
+      ? `<div class="qty">${(price * qty).toFixed(3)} − ${disc.toFixed(3)} ${Number(li.disc_pct) > 0 ? `(${Number(li.disc_pct)}%) ` : ''}${ARABIC ? 'خصم' : 'discount'}</div>`
       : '';
     return `<tr><td>${escapeHtml(li.name)}${escapeHtml(size)}${detail}${off}</td>
       <td class="amt">${(price * qty - disc).toFixed(3)}</td></tr>`;

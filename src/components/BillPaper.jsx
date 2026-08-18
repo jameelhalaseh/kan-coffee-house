@@ -31,6 +31,8 @@ export function billFromSale(sale) {
     qty: String(Number(li.qty) || 0),
     price: d3(li.price),
     disc: d3(li.disc),
+    // The percentage is what was agreed out loud; the money is what it came to. Print both.
+    discPct: Number(li.disc_pct) > 0 ? String(Number(li.disc_pct)) : '',
     // The line's own discount comes off the line, so `amount` is what that line actually
     // contributes to the total. The gross is kept alongside it so the bill can show both.
     gross: d3((Number(li.price) || 0) * (Number(li.qty) || 0)),
@@ -134,7 +136,7 @@ function BillPaper({ bill: r, compact = false }) {
                     item it came off. A lump sum at the foot of the bill would not say which. */}
                 {li.disc && li.disc !== '0.000' && (
                   <div style={{ fontSize: 11, color: PAPER.faint }}>
-                    {ARABIC ? 'خصم' : 'Discount'} −{li.disc} {ARABIC ? `(من ${li.gross})` : `(off ${li.gross})`}
+                    {ARABIC ? 'خصم' : 'Discount'}{li.discPct ? ` ${li.discPct}%` : ''} −{li.disc} {ARABIC ? `(من ${li.gross})` : `(off ${li.gross})`}
                   </div>
                 )}
               </td>
