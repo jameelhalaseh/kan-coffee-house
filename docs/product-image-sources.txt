@@ -1,6 +1,6 @@
 ================================================================================
 PRODUCT ARTWORK — WHICH SOURCE FILE BECAME WHICH PRODUCT
-Kan Coffee House  ·  uploaded 2026-08-18  ·  43 of 44 products
+Kan Coffee House  ·  uploaded 2026-08-18  ·  all 44 products
 ================================================================================
 
 WHY THIS FILE EXISTS
@@ -75,7 +75,7 @@ MAPPING
   KC-CK-02   Iced Tea                     [C] (3)
   KC-CK-03   Smoothies                    [C] (4)
   KC-CK-04   Fresh Juice                  [C] (5)
-  KC-CK-05   Matcha                       *** NO IMAGE — NEVER GENERATED ***
+  KC-CK-05   Matcha                       supplied separately, 2026-08-18 (see below)
   KC-CK-06   Summer Passion               [C] (7)
   KC-SP-01   Hot Arabian Latte            [C] (8)
   KC-SP-02   Hot Spanilla                 [C] (9)
@@ -86,16 +86,18 @@ MAPPING
   KC-SP-07   Affogato                     [Z5] KC-SP-07-affogato.png
 
 --------------------------------------------------------------------------------
-MISSING
+THE ONE THAT WAS MISSING — now resolved
 --------------------------------------------------------------------------------
 
-KC-CK-05 (Matcha, iced) has no picture. Slot (6) of the 08_40_06 group is a
-byte-identical copy of slot (1), Hot Pistachio — so the matcha was never generated
-and a duplicate was downloaded in its place. That is why 54 delivered files held
-only 43 distinct images.
+KC-CK-05 (Matcha, iced) was absent from the whole delivery. Slot (6) of the
+08_40_06 group was a byte-identical copy of slot (1), Hot Pistachio, so the matcha
+was never generated and a duplicate was downloaded in its place. That is why 54
+delivered files held only 43 distinct images.
 
-Its prompt is #36 in docs/product-image-prompts.txt. Generate one transparent PNG
-and upload it at Inventory -> Matcha -> Product picture.
+It was supplied separately on 2026-08-18 as
+~/Downloads/2d1d1f2b-5508-47e8-9d6f-72b431969658.png — 1254x1254, 63.4% transparent
+with transparent corners, matching the rest of the set — and uploaded through the
+same pipeline. All 44 products now carry artwork.
 
 --------------------------------------------------------------------------------
 UNCERTAIN — worth a second pair of eyes
