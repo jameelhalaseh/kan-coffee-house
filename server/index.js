@@ -13,7 +13,58 @@ const rateLimit = require('express-rate-limit');
 const { log, alert, requestLogger } = require('./logger');
 
 const app = express();
-app.set('trust proxy', 1); // Heroku terminates TLS at the router; needed for rate-limit IPs
+
+// ── Who is allowed to tell us the client's IP ─────────────────────────────────
+// This was `trust proxy: 1`, and that made every rate limit in the file decorative. Express
+// with a numeric setting treats the last N entries of X-Forwarded-For as trusted hops and
+// takes the next one along as req.ip — so a caller who sends the header simply chooses their
+// own limiter bucket. Measured before the fix: 29 wrong passwords, then 429, then twenty MORE
+// accepted attempts just by adding `X-Forwarded-For: 9.9.9.1`.
+//
+// It is not fixed by putting Caddy in front, either. Caddy APPENDS the real client to the
+// header, so an attacker-supplied value ends up to the left of it and `1` lands on exactly the
+// value the attacker wrote.
+//
+// So the default is now to trust NOTHING: req.ip is the socket address, which cannot be
+// forged. A deployment behind a proxy sets TRUST_PROXY to that proxy's address or subnet
+// (e.g. TRUST_PROXY=172.18.0.0/16 for the Docker network, or 'loopback'), never to a number,
+// and never to `true` — which would restore the hole verbatim.
+function trustProxySetting() {
+  const raw = String(process.env.TRUST_PROXY || '').trim();
+  if (!raw || raw === 'false' || raw === '0') return false;
+  if (raw === 'true') {
+    log.warn('TRUST_PROXY=true trusts a client-supplied X-Forwarded-For and makes every rate '
+      + 'limit bypassable. Set it to the proxy address or subnet instead.');
+    return true;
+  }
+  // A list of addresses / CIDRs / the 'loopback','linklocal','uniquelocal' shorthands.
+  return raw.includes(',') ? raw.split(',').map((x) => x.trim()).filter(Boolean) : raw;
+}
+app.set('trust proxy', trustProxySetting());
+
+// One-shot warning for the opposite mistake: sitting behind a proxy without telling the app,
+// which buckets the whole shop under the proxy's single address and throttles honest tills.
+let warnedProxy = false;
+app.use((req, _res, next) => {
+  if (!warnedProxy && req.headers['x-forwarded-for'] && app.get('trust proxy') === false) {
+    warnedProxy = true;
+    log.warn('X-Forwarded-For seen but TRUST_PROXY is unset: rate limits are keyed on the '
+      + "proxy's address, not the client's. Set TRUST_PROXY to the proxy's address or subnet.",
+      { hint: 'TRUST_PROXY=loopback' });
+  }
+  next();
+});
+
+// The one non-self origin the page may call: the local ESC/POS print bridge. Configurable so
+// a different port is a config change rather than a CSP edit, and so a shop that prints over
+// Web Serial (Kan) can set PRINT_BRIDGE_ORIGIN= to remove the grant entirely.
+const PRINT_BRIDGE = (() => {
+  const raw = process.env.PRINT_BRIDGE_ORIGIN;
+  if (raw !== undefined) {
+    return String(raw).split(',').map((x) => x.trim()).filter(Boolean);
+  }
+  return ['http://localhost:9110', 'http://127.0.0.1:9110'];
+})();
 
 // CSP — the build is self-hosted and loads no external scripts.
 // script-src is 'self' ONLY — no 'unsafe-inline'. The build sets
@@ -40,8 +91,13 @@ app.use(helmet({
       // letter badges. The same applies to the upload preview, which reads a local file.
       'img-src': ["'self'", 'data:', 'blob:', 'https:'],
       'font-src': ["'self'", 'data:', 'https://fonts.gstatic.com'],
-      // localhost/127.0.0.1 allowed so the page can reach the local print bridge (Dealer).
-      'connect-src': ["'self'", 'https://*.sentry.io', 'https://*.ingest.sentry.io', 'http://localhost:*', 'http://127.0.0.1:*'],
+      // The local print bridge, pinned to ONE origin instead of the whole of localhost.
+      // `http://localhost:*` let the page reach every port on the operator's own machine —
+      // harmless while nothing can inject script here, but it is a wide grant for a feature
+      // that talks to exactly one daemon. src/lib/thermalPrinter.js defaults to :9110; a shop
+      // that moves the bridge sets PRINT_BRIDGE_ORIGIN to match.
+      // (Kan prints over Web Serial, which is not a fetch and needs no connect-src at all.)
+      'connect-src': ["'self'", 'https://*.sentry.io', 'https://*.ingest.sentry.io', ...PRINT_BRIDGE],
       'object-src': ["'none'"],
       'base-uri': ["'self'"],
       'frame-ancestors': ["'none'"],

@@ -13,10 +13,27 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: pos
-      POSTGRES_PASSWORD: pos
+      # Read from .env (gitignored), defaulting to the old dev value so an existing checkout
+      # keeps working. Only ever applied when the VOLUME IS EMPTY — Postgres sets the password
+      # at first init, so changing this on a database that already exists does nothing. To
+      # rotate a live one: docker exec -it kan-pos-db psql -U pos -d postgres
+      #   -c "alter user pos with password '<new>'"   (then update .env to match)
+      POSTGRES_PASSWORD: ${POS_DB_PASSWORD:-pos}
       POSTGRES_DB: kanpos
     ports:
-      - "5435:5432"
+      # 127.0.0.1, NOT 0.0.0.0 — and this is the important character on the line.
+      #
+      # Docker's default binding publishes to every interface, so this container was answering
+      # on the machine's LAN address with the credentials above. Verified before the change by
+      # connecting from a separate container over the LAN IP and reading the products table:
+      # on any shared café or office WiFi, every price, every sale and the whole app_users
+      # table (where overwriting a bcrypt hash is easier than cracking one) was readable and
+      # writable by anyone on the network. Docker also writes its own iptables rules, so a host
+      # firewall does not cover this.
+      #
+      # Bound to loopback the port is reachable only from this machine, which is all local
+      # development needs. `docker compose exec db psql` is unaffected either way.
+      - "127.0.0.1:5435:5432"
     volumes:
       - kan_pos_data:/var/lib/postgresql/data
     healthcheck:

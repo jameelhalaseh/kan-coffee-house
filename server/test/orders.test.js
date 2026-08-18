@@ -5,7 +5,7 @@
 // not deduct twice, a void returns the goods, and a refund cannot exceed the original.
 const request = require('supertest');
 const {
-  seedUsers, login, auth, clearCatalogue, clearOrders, makeProduct, stockOf, app, db,
+  seedUsers, login, auth, clearCatalogue, clearOrders, makeProduct, stockOf, withTax, app, db,
 } = require('./helpers');
 
 let adminToken;
@@ -27,12 +27,26 @@ afterAll(() => db.pool.end());
 let uidCounter = 0;
 const uid = () => `test-order-${Date.now()}-${++uidCounter}`;
 
-// A minimal well-formed order for the single `main` store.
-const order = (over = {}) => ({
-  id: uid(), floor: 'main', table_id: null,
-  items: [], sub: 0, tax: 0, total: 0, pay: 'cash', waiter: 'test_cashier',
-  date: '2026-01-01', time: '12:00:00', ...over,
-});
+// A minimal well-formed order for the single `main` store. withTax() fills sub/tax from the
+// final total so the bill passes the server's money check for the right reason — see
+// server/test/helpers.js.
+//
+// A bill with no lines gets one, sized to whatever total the test asked for. The server now
+// refuses an order carrying no goods (a nonzero total with an empty basket is a fabricated
+// sale, and it was accepted before validateOrderMoney existed), while these fixtures are
+// about invoice numbering and voiding rather than about the basket. The stand-in carries a
+// STRING id, which marks it an open-price line: it moves no stock, so it cannot disturb the
+// stock assertions elsewhere in this file.
+const order = (over = {}) => {
+  const total = Number(over.total ?? 0);
+  const items = over.items
+    ?? [{ id: 'misc-fixture', name: 'Fixture line', qty: 1, price: Math.abs(total) }];
+  return withTax({
+    id: uid(), floor: 'main', table_id: null,
+    total, pay: 'cash', waiter: 'test_cashier',
+    date: '2026-01-01', time: '12:00:00', ...over, items,
+  });
+};
 
 const save = (token, body) => request(app).post('/api/orders').set(...auth(token)).send(body);
 
@@ -172,17 +186,24 @@ describe('refunds', () => {
     expect(res.status).toBe(200);
   });
 
+  // Each refund is now internally consistent with its own lines — it used to pay out 12.000
+  // against a single 10.000 line, which the server refuses since validateOrderMoney landed
+  // (a refund handing back more than the goods it names is money leaving the till with no
+  // basket behind it). The point of the test is unchanged: a 15.000 sale, refunded 10.000
+  // twice, must stop on the second.
   test('two partial refunds cannot together exceed the original', async () => {
     const p = await makeProduct({ stock: 100 });
     await save(cashierToken, order({
-      invoice_no: 4004, items: [{ id: p.id, name: p.name, qty: 2, price: 10 }], total: 20,
+      invoice_no: 4004, items: [{ id: p.id, name: p.name, qty: 1, price: 15 }], total: 15,
     }));
     const partial = () => order({
       status: 'refund', buyer: 'return of #4004',
-      items: [{ id: p.id, name: p.name, qty: 1, price: 10 }], total: -12,
+      items: [{ id: p.id, name: p.name, qty: 1, price: 10 }], total: -10,
     });
-    expect((await save(cashierToken, partial())).status).toBe(200);
-    expect((await save(cashierToken, partial())).status).toBe(400);
+    expect((await save(cashierToken, partial())).status).toBe(200);   // 10 of 15 given back
+    const second = await save(cashierToken, partial());               // only 5 remains
+    expect(second.status).toBe(400);
+    expect(second.body).toEqual({ error: 'over_refund' });
   });
 });
 

@@ -92,33 +92,56 @@ function userJson(u, token) {
 // Both are env-overridable, following the pattern index.js already uses for the rate limits.
 // The defaults are unchanged, so a deployment that sets neither behaves exactly as before.
 //
-// AUTH_LOCK_MAX_FAILS=0 DISABLES the lockout entirely. That is a real weakening, not a tuning
-// knob: with it off, someone guessing passwords is limited only by the per-IP rate limit,
-// which is sized for a whole shop of traffic rather than for one attacker. It exists because
-// the lockout is genuinely painful in local development, where one mistyped password costs
-// fifteen minutes. DO NOT SHIP A SHOP WITH IT OFF.
+// AUTH_LOCK_MAX_FAILS=0 DISABLES the lockout for LOGIN. It exists because the shipped 5-fails
+// / 15-minutes was genuinely unusable at a counter: one mistyped password cost a barista a
+// quarter of an hour with a queue in front of them, so the shop turned it off — and turning it
+// off left password guessing capped only by a per-IP rate limit that (see index.js) was itself
+// bypassable with one header.
+//
+// The defaults are therefore retuned rather than restored. 10 consecutive failures is not a
+// typo, and 2 minutes is a pause rather than a shift-stopper. That keeps the protection the
+// shop actually needs while removing the reason it was switched off.
+//
+// The RESET-CODE cap is deliberately NOT part of that switch — see RESET_MAX_FAILS below.
 const envInt = (name, fallback) => {
   const n = Number.parseInt(process.env[name], 10);
   return Number.isInteger(n) && n >= 0 ? n : fallback;
 };
-const MAX_FAILS = envInt('AUTH_LOCK_MAX_FAILS', 5);
-const LOCK_MINUTES = envInt('AUTH_LOCK_MINUTES', 15) || 15;
+const MAX_FAILS = envInt('AUTH_LOCK_MAX_FAILS', 10);
+const LOCK_MINUTES = envInt('AUTH_LOCK_MINUTES', 2) || 2;
 const LOCKOUT_DISABLED = MAX_FAILS === 0;
+
+// A password-reset code is SIX DIGITS with a fifteen-minute life: one million possibilities,
+// which is nothing to guess at machine speed. Its only cap used to be the login lockout, so
+// setting AUTH_LOCK_MAX_FAILS=0 for counter convenience silently removed the brute-force
+// protection from the admin account-recovery path as well. That is not a trade any shop would
+// knowingly make, so this floor applies even when the login lockout is off. It is tunable but
+// cannot be switched off: envInt(...) || 5 turns a 0 into 5.
+const RESET_MAX_FAILS = envInt('AUTH_RESET_MAX_FAILS', 5) || 5;
+const RESET_LOCK_MINUTES = envInt('AUTH_RESET_LOCK_MINUTES', 15) || 15;
+
+// The reset path passes its own key ('reset:<username>'); everything else uses the login
+// settings. Keeping the choice in one predicate means neither call site can forget it.
+const isResetKey = (key) => String(key).startsWith('reset:');
+const limitsFor = (key) => (isResetKey(key)
+  ? { max: RESET_MAX_FAILS, minutes: RESET_LOCK_MINUTES, enforced: true }
+  : { max: MAX_FAILS, minutes: LOCK_MINUTES, enforced: !LOCKOUT_DISABLED });
 
 // Said once at boot rather than left silent. A shop running without brute-force protection
 // should be discoverable from its logs, not only by reading the .env it was started with.
 if (LOCKOUT_DISABLED) {
   console.warn(JSON.stringify({
     level: 'warn',
-    msg: 'AUTH_LOCK_MAX_FAILS=0 - per-username lockout is DISABLED. Wrong passwords are not '
-       + 'counted and no account can lock. Only the per-IP rate limit remains.',
+    msg: 'AUTH_LOCK_MAX_FAILS=0 - per-username lockout is DISABLED for login. Wrong passwords '
+       + 'are not counted and no account can lock. Only the per-IP rate limit remains. '
+       + 'Password-reset codes are still capped.',
   }));
 }
 
 // Returns { locked: true, retry_after_s } while a lock is in force. An EXPIRED lock is
 // cleared here so the next attempt starts from a clean counter.
 async function checkLock(key) {
-  if (LOCKOUT_DISABLED) return { locked: false };
+  if (!limitsFor(key).enforced) return { locked: false };
   const { rows } = await db.query('select fails, locked_until from pin_attempts where id = $1', [key]);
   const r = rows[0];
   if (!r || !r.locked_until) return { locked: false };
@@ -130,7 +153,8 @@ async function checkLock(key) {
 
 // Count a failure; arm the lock on the Nth consecutive one.
 async function recordFail(key) {
-  if (LOCKOUT_DISABLED) return;
+  const { max, minutes, enforced } = limitsFor(key);
+  if (!enforced) return;
   await db.query(
     `insert into pin_attempts (id, fails, locked_until) values ($1, 1, null)
      on conflict (id) do update set
@@ -138,7 +162,7 @@ async function recordFail(key) {
        locked_until = case when pin_attempts.fails + 1 >= $2
                            then now() + make_interval(mins => $3)
                            else pin_attempts.locked_until end`,
-    [key, MAX_FAILS, LOCK_MINUTES]
+    [key, max, minutes]
   );
 }
 
@@ -378,4 +402,11 @@ module.exports = {
   requireSession,
   requireAdmin,
   requireView,
+  // The lockout counters, exported for server/test/resetLockFloor.test.js. That file loads a
+  // fresh copy of this module under different AUTH_LOCK_* values to prove the reset-code cap
+  // survives AUTH_LOCK_MAX_FAILS=0 — a property no route-level test can reach, because
+  // setupEnv.js pins those values for the whole suite.
+  checkLock,
+  recordFail,
+  clearFails,
 };

@@ -3,13 +3,12 @@
   "version": "1.0.0",
   "private": true,
   "homepage": ".",
-  "//dev-proxy": "The dev-server proxy lives in src/setupProxy.js, NOT in a `proxy` field here. The shorthand loses to CRA's historyApiFallback (disableDotRule: true) for /client-config.js — see the comment at the top of that file. Do not re-add a `proxy` key; it would be redundant and would reintroduce the ambiguity.",
+  "//dev-proxy": "The dev-server proxy lives in src/setupProxy.js, NOT in a `proxy` field here. The shorthand loses to CRA's historyApiFallback (disableDotRule: true) for /client-config.js \u2014 see the comment at the top of that file. Do not re-add a `proxy` key; it would be redundant and would reintroduce the ambiguity.",
   "engines": {
     "node": ">=18"
   },
   "dependencies": {
     "@sentry/react": "^10.55.0",
-    "@supabase/supabase-js": "^2.43.0",
     "bcryptjs": "^2.4.3",
     "compression": "^1.7.4",
     "cors": "^2.8.5",
@@ -25,7 +24,7 @@
   },
   "scripts": {
     "start": "react-scripts start",
-    "build": "cross-env INLINE_RUNTIME_CHUNK=false react-scripts build",
+    "build": "cross-env INLINE_RUNTIME_CHUNK=false GENERATE_SOURCEMAP=false react-scripts build",
     "server": "node server/index.js",
     "test:server": "jest --config jest.server.config.js",
     "test:reporting": "jest --config jest.reporting.config.js",
@@ -43,7 +42,7 @@
     "db:reset": "docker compose down -v && docker compose up -d",
     "setup": "npm run migrate && npm run migrate:reporting && npm run seed:products",
     "seed:demo-sales-DESTRUCTIVE": "node server/seed-demo-sales.js",
-    "heroku-postbuild": "cross-env INLINE_RUNTIME_CHUNK=false react-scripts build"
+    "heroku-postbuild": "cross-env INLINE_RUNTIME_CHUNK=false GENERATE_SOURCEMAP=false react-scripts build"
   },
   "eslintConfig": {
     "extends": [
@@ -63,5 +62,14 @@
     "cross-env": "^10.1.0",
     "jest": "^27.5.1",
     "supertest": "^7.2.2"
+  },
+  "overrides": {
+    "nth-check": "^2.1.1",
+    "postcss": "^8.4.31",
+    "serialize-javascript": "^6.0.2",
+    "shell-quote": "^1.8.1",
+    "underscore": "^1.13.6",
+    "nanoid": "^3.3.8",
+    "brace-expansion": "^2.0.2"
   }
 }

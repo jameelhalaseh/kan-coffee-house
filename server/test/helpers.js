@@ -66,8 +66,42 @@ const stockOf = async (id) => {
   return Number(rows[0].stock);
 };
 
+// The browser's money arithmetic, for building bills the server will accept.
+//
+// The server now recomputes sub/tax/total from the lines (validateOrderMoney), so a fixture
+// that hardcodes `sub: 0, tax: 0` on a 22.500 bill is no longer a harmless shortcut - it is
+// a bill claiming a 16% shop collected no VAT, which is exactly what the validator exists to
+// refuse. Every fixture derives its figures here instead of restating them.
+const TAX_PCT = Number(process.env.CLIENT_TAX_PCT || 16);
+const r3 = (n) => Math.round((Number(n) || 0) * 1000) / 1000;
+
+// Mirrors src/lib.js splitInclusiveTax and the server's copy of it.
+function splitInclusiveTax(total, rate) {
+  const t = Number(total) || 0;
+  const r = Number(rate) || 0;
+  if (r <= 0) return { net: r3(t), tax: 0 };
+  const tax = r3(t - t / (1 + r));
+  return { net: r3(t - tax), tax };
+}
+
+// Fill in the two VAT columns from a bill's OWN total, after any override the test applied.
+// Deriving from the final total (rather than from the lines) is deliberate: a test that
+// deliberately posts a mismatched total still gets self-consistent tax and sub, so it fails
+// on the mismatch it is about instead of on the VAT columns.
+function withTax(body) {
+  const total = Number(body.total) || 0;
+  // A refund's lines stay positive while its total is negated, and it carries no tax of its
+  // own - the original sale already did. Same shape the History screen posts.
+  if (body.status === 'refund') {
+    return { ...body, tax: body.tax ?? 0, sub: body.sub ?? total };
+  }
+  const { net, tax } = splitInclusiveTax(total, TAX_PCT / 100);
+  return { ...body, tax: body.tax ?? tax, sub: body.sub ?? net };
+}
+
 module.exports = {
   USERS, seedUsers, login, auth,
   clearCatalogue, clearOrders, makeProduct, stockOf,
+  splitInclusiveTax, withTax, TAX_PCT,
   app, db,
 };

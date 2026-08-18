@@ -10,6 +10,13 @@ const { requireSession, requireAdmin, requireView } = require('../auth');
 const { fail, dbError } = require('../validate');
 const { FLOORS, ordersTable } = require('../floors');
 const { dayRangeUtc } = require('../tz');
+const { clientConfig } = require('../clientConfig');
+
+// The shop's VAT rate, read from the SERVER's environment on every call rather than captured
+// at require time: clientConfig() is the one place it is parsed and validated, and reading it
+// per request means a restart with a corrected rate needs no code change here. Never taken
+// from the request body — that would be asking the caller how much tax they owe.
+const TAX_RATE = () => (Number(clientConfig().store.taxPct) || 0) / 100;
 
 const jsonb = (v) => (v === undefined || v === null ? null : JSON.stringify(v));
 
@@ -50,23 +57,58 @@ const isDateOnly = (s) => /^\d{4}-\d{2}-\d{2}$/.test(String(s || ''));
 // on floats would reject honest bills.
 const EPS = 0.0005;
 
-// Returns an error code, or null when the bill's discounts add up.
-// A bill with no line discounts is not examined at all: this must not change the contract
-// for the orders that already exist, only police the field being introduced.
-function validateDiscounts(o) {
+// The browser's arithmetic, recomputed here. This is the ONLY copy the database trusts.
+//
+// It used to examine a bill only when some line carried a discount, and to check nothing at
+// all otherwise: `sub`, `tax` and `total` were written exactly as the browser sent them. A
+// caller holding any staff session could therefore post a 3.750 latte as `total: 0.100,
+// tax: 0` and the row was accepted, because nothing on the server had an opinion about what
+// the lines added up to. Everything downstream is built from those three columns - the
+// Z-report, the P&L, and whatever is eventually filed with the ISTD - so the VAT the shop
+// declares had no server-side check behind it at all.
+//
+// What is checked, and what is deliberately not:
+//   * Line prices are NOT compared to the catalogue. A price override on the line is a real
+//     feature of the till (LineEditModal), and open-price "misc" items have no catalogue row
+//     to compare against. What must hold is that the bill is internally honest.
+//   * The three money columns must follow from the lines: total from gross and discounts,
+//     tax extracted from that total at the shop's own rate, sub as the remainder.
+//   * The rate comes from the server's own environment, never from the request.
+const r3 = (n) => Math.round((Number(n) || 0) * 1000) / 1000;
+
+// Mirrors src/lib.js splitInclusiveTax EXACTLY, including its rounding. Shelf prices are
+// VAT-inclusive, so the tax is extracted from the total rather than added to it. If the two
+// ever drift apart, every honest checkout starts failing tax_mismatch - which is why
+// server/test/orderMoney.test.js pins them against each other.
+function splitInclusiveTax(total, rate) {
+  const t = Number(total) || 0;
+  const r = Number(rate) || 0;
+  if (r <= 0) return { net: r3(t), tax: 0 };
+  const tax = r3(t - t / (1 + r));
+  return { net: r3(t - tax), tax };
+}
+
+// Returns an error code, or null when every figure on the bill follows from its lines.
+function validateOrderMoney(o, taxRate) {
   const items = Array.isArray(o.items) ? o.items : [];
+  if (!items.length) return 'invalid';
+
   // "Carries a discount" is decided on the field being PRESENT, not on it being a number.
   // Testing `Number(li.disc) > 0` looked equivalent and was not: a junk value is NaN, NaN
   // fails every comparison, and the bill would skip validation entirely — the one input
   // shaped like an attack was the one that got waved through.
   const present = (li) => li && li.disc !== undefined && li.disc !== null && li.disc !== '';
-  if (!items.some(present)) return null;
 
   let gross = 0;
   let discTotal = 0;
   for (const li of items) {
-    const qty = Number(li.qty) || 0;
-    const price = Number(li.price) || 0;
+    if (!li || typeof li !== 'object') return 'invalid_line';
+    const qty = Number(li.qty);
+    const price = Number(li.price);
+    // A non-numeric qty or price used to fall through `Number(x) || 0` as a silent zero,
+    // which made the whole line free and still balanced. Reject it instead.
+    if (!Number.isFinite(qty) || !Number.isFinite(price)) return 'invalid_line';
+    if (qty <= 0 || price < 0) return 'invalid_line';
     const amount = price * qty;
     gross += amount;
 
@@ -78,7 +120,26 @@ function validateDiscounts(o) {
   }
 
   if (Math.abs((Number(o.disc) || 0) - discTotal) > EPS) return 'discount_mismatch';
-  if (Math.abs((Number(o.total) || 0) - (gross - discTotal)) > EPS) return 'total_mismatch';
+
+  const svc = Number(o.svc) || 0;
+  if (!Number.isFinite(svc) || svc < 0) return 'invalid';
+
+  // A REFUND is the reversing row the History screen writes: the lines stay POSITIVE (they
+  // describe the goods coming back) while sub and total are negated, and its tax is zero
+  // because the original sale already carried the VAT. Validating a refund against the sale
+  // formula would reject every return in the shop, so its shape is stated rather than
+  // assumed. (That refunds do not reverse the VAT line is existing behaviour and a reporting
+  // question, not a security one — it is not changed here.)
+  const isRefund = o.status === 'refund';
+  const expTotal = r3(isRefund ? -(gross - discTotal) : gross - discTotal + svc);
+  if (Math.abs((Number(o.total) || 0) - expTotal) > EPS) return 'total_mismatch';
+
+  const expTax = isRefund ? 0 : splitInclusiveTax(expTotal, taxRate).tax;
+  if (Math.abs((Number(o.tax) || 0) - expTax) > EPS) return 'tax_mismatch';
+
+  const expSub = isRefund ? expTotal : r3(expTotal - expTax);
+  if (Math.abs((Number(o.sub) || 0) - expSub) > EPS) return 'sub_mismatch';
+
   return null;
 }
 
@@ -177,8 +238,8 @@ router.post('/', requireSession, async (req, res, next) => {
   //      receipt but not in the total is a receipt that lies, and one that reduces the total
   //      further than it claims is theft with a paper trail.
   // The tolerance is half a fils: JOD is 3dp, and the client rounds.
-  const discErr = validateDiscounts(o);
-  if (discErr) return fail(res, discErr, 400);
+  const moneyErr = validateOrderMoney(o, TAX_RATE());
+  if (moneyErr) return fail(res, moneyErr, 400);
   normaliseDiscountNotes(o);
 
   const isRefund = o.status === 'refund';

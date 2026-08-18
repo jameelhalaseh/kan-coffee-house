@@ -17,7 +17,13 @@ const { execFileSync } = require('child_process');
 const path = require('path');
 const { migrate } = require('../migrate');
 
+// Also honoured from .env, read into a throwaway object so this cannot pull DATABASE_URL in
+// and point a database-DROPPING setup at the shop's own data.
+let fileEnv = {};
+try { fileEnv = require('dotenv').config({ processEnv: {} }).parsed || {}; } catch (_) { /* no .env */ }
+
 const TEST_URL = process.env.REPORTING_TEST_DATABASE_URL
+  || fileEnv.REPORTING_TEST_DATABASE_URL
   || 'postgres://pos:pos@localhost:5435/reporting_test';
 
 module.exports = async () => {

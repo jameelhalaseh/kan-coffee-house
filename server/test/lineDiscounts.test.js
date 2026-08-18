@@ -6,7 +6,7 @@
 // client is the part an operator can bypass — these assert the server refuses on its own.
 const request = require('supertest');
 const {
-  seedUsers, login, auth, clearCatalogue, clearOrders, makeProduct, stockOf, app, db,
+  seedUsers, login, auth, clearCatalogue, clearOrders, makeProduct, stockOf, withTax, app, db,
 } = require('./helpers');
 
 let adminToken;
@@ -30,16 +30,17 @@ const uid = () => `test-disc-${Date.now()}-${++uidCounter}`;
 
 const save = (token, body) => request(app).post('/api/orders').set(...auth(token)).send(body);
 
-// A bill whose figures agree: total = Σ(price × qty) − Σ disc.
+// A bill whose figures agree: total = Σ(price × qty) − Σ disc, with the VAT columns derived
+// from that total by withTax() (server/test/helpers.js) rather than stated as zero.
 const billOf = (items, over = {}) => {
   const gross = items.reduce((s, li) => s + li.price * li.qty, 0);
   const disc = items.reduce((s, li) => s + (li.disc || 0), 0);
-  return {
+  return withTax({
     id: uid(), floor: 'main', items,
-    sub: 0, tax: 0, disc, total: gross - disc,
+    disc, total: gross - disc,
     pay: 'cash', waiter: 'test_cashier', status: 'paid',
     date: '2026-02-01', time: '12:00:00', ...over,
-  };
+  });
 };
 
 describe('line discounts', () => {
@@ -136,15 +137,24 @@ describe('line discounts', () => {
     expect(await stockOf(p.id)).toBe(10);   // and the bottle is still on the shelf
   });
 
-  test('a bill with no discounts is not examined at all', async () => {
-    // The existing contract: the server has never recomputed totals for ordinary sales, and
-    // introducing discounts must not quietly start rejecting orders that predate them.
+  // CONTRACT CHANGE, deliberately. This test used to assert the opposite - that a bill with
+  // no line discount was not examined, and that `total: 999` on a single 10.000 line was
+  // therefore accepted. That was the hole: `sub`, `tax` and `total` were written exactly as
+  // the browser sent them for every ordinary sale, so any staff session could record a sale
+  // at whatever figure it liked and every report downstream inherited it. The money is
+  // recomputed for EVERY bill now, discounted or not.
+  test('a bill with no discounts is examined too, and a wrong total is refused', async () => {
     const p = await makeProduct({ price: 10, stock: 10 });
     const res = await save(cashierToken, {
       id: uid(), floor: 'main', items: [{ id: p.id, name: p.name, price: 10, qty: 1 }],
       sub: 0, tax: 0, total: 999, pay: 'cash', date: '2026-02-01', time: '12:00:00',
     });
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ error: 'total_mismatch' });
+
+    // ...and nothing was written.
+    const { rows } = await db.query('select count(*)::int c from orders_main');
+    expect(rows[0].c).toBe(0);
   });
 
   test('tolerates rounding to the fils', async () => {
