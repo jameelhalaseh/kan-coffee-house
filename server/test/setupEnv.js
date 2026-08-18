@@ -14,6 +14,13 @@ process.env.NODE_ENV = 'test';
 // Deterministic session lifetime regardless of what the developer's .env says.
 process.env.SESSION_TTL_HOURS = '12';
 
+// Deterministic brute-force lockout for the same reason: a developer whose .env sets
+// AUTH_LOCK_MAX_FAILS=0 to stop being locked out locally would otherwise silently turn off
+// the very behaviour auth.test.js exists to pin, and the suite would go green on a shop
+// with no protection at all.
+process.env.AUTH_LOCK_MAX_FAILS = '5';
+process.env.AUTH_LOCK_MINUTES = '15';
+
 // A suite logs in far more often than a shop does, and every test shares one "client IP",
 // so the shipped per-IP ceilings would throttle the run itself. Raised through the same
 // env knobs an operator would use — the limiter code under test is unchanged, and the

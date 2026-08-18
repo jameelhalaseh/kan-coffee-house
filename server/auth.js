@@ -89,12 +89,36 @@ function userJson(u, token) {
 //
 // The counter is keyed on the submitted username whether or not that user exists —
 // otherwise "locked" vs "invalid" would itself enumerate accounts.
-const MAX_FAILS = 5;
-const LOCK_MINUTES = 15;
+// Both are env-overridable, following the pattern index.js already uses for the rate limits.
+// The defaults are unchanged, so a deployment that sets neither behaves exactly as before.
+//
+// AUTH_LOCK_MAX_FAILS=0 DISABLES the lockout entirely. That is a real weakening, not a tuning
+// knob: with it off, someone guessing passwords is limited only by the per-IP rate limit,
+// which is sized for a whole shop of traffic rather than for one attacker. It exists because
+// the lockout is genuinely painful in local development, where one mistyped password costs
+// fifteen minutes. DO NOT SHIP A SHOP WITH IT OFF.
+const envInt = (name, fallback) => {
+  const n = Number.parseInt(process.env[name], 10);
+  return Number.isInteger(n) && n >= 0 ? n : fallback;
+};
+const MAX_FAILS = envInt('AUTH_LOCK_MAX_FAILS', 5);
+const LOCK_MINUTES = envInt('AUTH_LOCK_MINUTES', 15) || 15;
+const LOCKOUT_DISABLED = MAX_FAILS === 0;
+
+// Said once at boot rather than left silent. A shop running without brute-force protection
+// should be discoverable from its logs, not only by reading the .env it was started with.
+if (LOCKOUT_DISABLED) {
+  console.warn(JSON.stringify({
+    level: 'warn',
+    msg: 'AUTH_LOCK_MAX_FAILS=0 - per-username lockout is DISABLED. Wrong passwords are not '
+       + 'counted and no account can lock. Only the per-IP rate limit remains.',
+  }));
+}
 
 // Returns { locked: true, retry_after_s } while a lock is in force. An EXPIRED lock is
 // cleared here so the next attempt starts from a clean counter.
 async function checkLock(key) {
+  if (LOCKOUT_DISABLED) return { locked: false };
   const { rows } = await db.query('select fails, locked_until from pin_attempts where id = $1', [key]);
   const r = rows[0];
   if (!r || !r.locked_until) return { locked: false };
@@ -106,6 +130,7 @@ async function checkLock(key) {
 
 // Count a failure; arm the lock on the Nth consecutive one.
 async function recordFail(key) {
+  if (LOCKOUT_DISABLED) return;
   await db.query(
     `insert into pin_attempts (id, fails, locked_until) values ($1, 1, null)
      on conflict (id) do update set
