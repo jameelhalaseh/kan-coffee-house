@@ -136,3 +136,37 @@ browser, because the server accepts nothing else (exactly 512x512 PNG):
 then PUT to /api/product-images/:id as base64. Result: 43 rows, ~12MB total in
 Postgres, every stored file re-verified as a valid 512x512 PNG with its
 transparency intact.
+
+--------------------------------------------------------------------------------
+CATEGORY TILES — promoted from product artwork, not generated separately
+--------------------------------------------------------------------------------
+
+The six category tiles were showing coloured letter badges, because the bundled
+artwork in src/assets/categories/ is the LIQUOR set and none of its names match this
+shop's categories. Rather than generate six more images, one representative drink per
+category was promoted into category_images (migration 0009):
+
+  hot coffee   <- KC-HC-07  Cafe Latte        (rosetta reads instantly as hot coffee)
+  cold coffee  <- KC-CC-01  Iced Latte        (layered, obviously cold)
+  tea & herbs  <- KC-TH-06  Moroccan Tea      (green; nothing else in the set is)
+  hot kan      <- KC-HK-01  Hot Chocolate
+  cold kan     <- KC-CK-04  Fresh Juice       (orange; carries at tile size)
+  special      <- KC-SP-07  Affogato
+
+Chosen for instant recognition AND for colour spread, because unlike the product
+tiles all six of these are seen at once.
+
+TWO THINGS TO KNOW
+
+The bytes are a COPY, not a reference. Replacing a product's picture does not update
+the category tile that was promoted from it — re-promote it, or upload the category
+image directly at Settings -> Categories, which is the supported path and overwrites
+whatever is there.
+
+The keys are the category name lowercased and trimmed ('tea & herbs'), which is what
+categoryImage() on the client resolves by. If a category is ever renamed, its tile
+silently falls back to the letter badge until the image is re-keyed.
+
+These were written straight into category_images rather than through
+PUT /api/category-images/:cat. That is not a way around the upload validator: the same
+bytes already passed it as 512x512 PNGs with alpha when they went in as product images.
